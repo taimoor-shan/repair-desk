@@ -175,7 +175,7 @@ export default function RepairDetail() {
           </dl>
 
           <div className="mt-4 pt-4 border-t border-gray-100">
-            <h4 className="text-sm font-medium text-gray-700 mb-2">Problem</h4>
+            <h4 className="text-sm font-medium text-gray-500 mb-2">Problem</h4>
             <p className="text-sm text-gray-900 whitespace-pre-wrap">
               {repair.problemDescription}
             </p>
@@ -183,7 +183,7 @@ export default function RepairDetail() {
 
           {repair.repairNotes && (
             <div className="mt-3">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">
+              <h4 className="text-sm font-medium text-gray-500 mb-2">
                 Repair Notes
               </h4>
               <p className="text-sm text-gray-900 whitespace-pre-wrap">
