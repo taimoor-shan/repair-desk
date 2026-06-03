@@ -59,7 +59,8 @@ export default function Settings() {
   async function handleImport(file) {
     const ok = await confirm(
       'Import Data',
-      'This will overwrite ALL current data with the backup file. Continue?'
+      'This will overwrite ALL current data with the backup file. Continue?',
+      { confirmLabel: 'Overwrite', confirmVariant: 'red' }
     );
     if (!ok) return;
 

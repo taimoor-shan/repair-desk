@@ -11,15 +11,20 @@ export function ConfirmProvider({ children }) {
     open: false,
     title: '',
     message: '',
+    confirmLabel: 'Delete',
+    confirmVariant: 'red',
     onConfirm: null,
   });
 
-  const confirm = useCallback((title, message) => {
+  const confirm = useCallback((title, message, opts = {}) => {
+    const { confirmLabel = 'Delete', confirmVariant = 'red' } = opts;
     return new Promise((resolve) => {
       setState({
         open: true,
         title,
         message,
+        confirmLabel,
+        confirmVariant,
         onConfirm: () => {
           setState((s) => ({ ...s, open: false }));
           resolve(true);
@@ -51,9 +56,13 @@ export function ConfirmProvider({ children }) {
               </button>
               <button
                 onClick={state.onConfirm}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+                className={`px-4 py-2 text-sm font-medium text-white rounded-lg ${
+                  state.confirmVariant === 'red'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
-                Delete
+                {state.confirmLabel}
               </button>
             </div>
           </div>

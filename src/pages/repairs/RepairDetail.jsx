@@ -51,7 +51,8 @@ export default function RepairDetail() {
     };
     const ok = await confirm(
       'Update Status',
-      `Mark this repair as "${labels[status] || status}"?`
+      `Mark this repair as "${labels[status] || status}"?`,
+      { confirmLabel: 'Confirm', confirmVariant: 'blue' }
     );
     if (!ok) return;
     updateStatus(status);
