@@ -6,6 +6,8 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import StatusBadge from '../../components/StatusBadge';
 import PrintReceipt from '../../components/PrintReceipt';
+import WhatsAppButton from '../../components/WhatsAppButton';
+import { formatRepairReceiptText } from '../../lib/whatsapp';
 import ReactDOM from 'react-dom/client';
 
 export default function RepairDetail() {
@@ -276,7 +278,7 @@ export default function RepairDetail() {
           {/* Print Receipts */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Print Receipts
+              Receipts
             </h3>
             <div className="space-y-2">
               <button
@@ -293,6 +295,28 @@ export default function RepairDetail() {
                   Print Final Receipt (Delivery + Payment)
                 </button>
               )}
+
+              <div className="border-t border-gray-100 pt-3 mt-3">
+                <p className="text-xs text-gray-400 mb-2">Share via WhatsApp</p>
+                <div className="flex gap-2">
+                  <WhatsAppButton
+                    phone={customer?.phone}
+                    text={formatRepairReceiptText(shop, repair, customer)}
+                    label="Initial"
+                    variant="solid"
+                    className="flex-1"
+                  />
+                  {repair.status === 'Delivered' && (
+                    <WhatsAppButton
+                      phone={customer?.phone}
+                      text={formatRepairReceiptText(shop, repair, customer)}
+                      label="Final"
+                      variant="outline"
+                      className="flex-1"
+                    />
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>

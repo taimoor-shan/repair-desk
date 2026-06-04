@@ -3,6 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getSale, getCustomer, getSettings } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import PrintReceipt from '../../components/PrintReceipt';
+import WhatsAppButton from '../../components/WhatsAppButton';
+import { formatSaleReceiptText } from '../../lib/whatsapp';
 import ReactDOM from 'react-dom/client';
 
 export default function SaleDetail() {
@@ -68,12 +70,19 @@ export default function SaleDetail() {
             Sale {sale.receiptNumber}
           </h2>
         </div>
-        <button
-          onClick={handlePrint}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-        >
-          Print Receipt
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handlePrint}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Print Receipt
+          </button>
+          <WhatsAppButton
+            phone={customer?.phone}
+            text={formatSaleReceiptText(shop, sale, customer)}
+            label="WhatsApp"
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
