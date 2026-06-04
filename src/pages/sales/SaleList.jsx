@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getSales, getCustomer } from '../../db/db';
+import { getSales, getCustomer } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import EmptyState from '../../components/EmptyState';
 

@@ -163,4 +163,75 @@ export async function updateSettings(data) {
   return db.settings.update(1, data);
 }
 
-export default db;
+// --- Receipt Number Helpers ---
+
+export async function getNextRepairSeq() {
+  const s = await getSettings();
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+
+  if (s.lastRepairDate !== today) {
+    s.lastRepairSeq = 1;
+    s.lastRepairDate = today;
+  } else {
+    s.lastRepairSeq += 1;
+  }
+
+  await updateSettings({
+    lastRepairSeq: s.lastRepairSeq,
+    lastRepairDate: s.lastRepairDate,
+  });
+
+  return s.lastRepairSeq;
+}
+
+export async function getNextSaleSeq() {
+  const s = await getSettings();
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+
+  if (s.lastSaleDate !== today) {
+    s.lastSaleSeq = 1;
+    s.lastSaleDate = today;
+  } else {
+    s.lastSaleSeq += 1;
+  }
+
+  await updateSettings({
+    lastSaleSeq: s.lastSaleSeq,
+    lastSaleDate: s.lastSaleDate,
+  });
+
+  return s.lastSaleSeq;
+}
+
+// --- Backup ---
+
+export async function exportData() {
+  const [customers, products, repairJobs, sales, settings] = await Promise.all([
+    db.customers.toArray(),
+    db.products.toArray(),
+    db.repairJobs.toArray(),
+    db.sales.toArray(),
+    db.settings.toArray(),
+  ]);
+  return { customers, products, repairJobs, sales, settings };
+}
+
+export async function importData(json) {
+  await db.transaction(
+    'rw',
+    [db.customers, db.products, db.repairJobs, db.sales, db.settings],
+    async () => {
+      await db.customers.clear();
+      await db.products.clear();
+      await db.repairJobs.clear();
+      await db.sales.clear();
+      await db.settings.clear();
+
+      if (json.customers) await db.customers.bulkAdd(json.customers);
+      if (json.products) await db.products.bulkAdd(json.products);
+      if (json.repairJobs) await db.repairJobs.bulkAdd(json.repairJobs);
+      if (json.sales) await db.sales.bulkAdd(json.sales);
+      if (json.settings) await db.settings.bulkAdd(json.settings);
+    }
+  );
+}

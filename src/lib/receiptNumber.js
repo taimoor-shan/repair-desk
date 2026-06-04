@@ -1,4 +1,4 @@
-import { getSettings, updateSettings } from '../db/db';
+import { getNextRepairSeq, getNextSaleSeq } from './api';
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -9,39 +9,11 @@ function pad(n) {
 }
 
 export async function generateRepairNumber() {
-  const s = await getSettings();
-  const today = todayStr();
-
-  if (s.lastRepairDate !== today) {
-    s.lastRepairSeq = 1;
-    s.lastRepairDate = today;
-  } else {
-    s.lastRepairSeq += 1;
-  }
-
-  await updateSettings({
-    lastRepairSeq: s.lastRepairSeq,
-    lastRepairDate: s.lastRepairDate,
-  });
-
-  return `REP-${today}-${pad(s.lastRepairSeq)}`;
+  const seq = await getNextRepairSeq();
+  return `REP-${todayStr()}-${pad(seq)}`;
 }
 
 export async function generateSaleNumber() {
-  const s = await getSettings();
-  const today = todayStr();
-
-  if (s.lastSaleDate !== today) {
-    s.lastSaleSeq = 1;
-    s.lastSaleDate = today;
-  } else {
-    s.lastSaleSeq += 1;
-  }
-
-  await updateSettings({
-    lastSaleSeq: s.lastSaleSeq,
-    lastSaleDate: s.lastSaleDate,
-  });
-
-  return `SAL-${today}-${pad(s.lastSaleSeq)}`;
+  const seq = await getNextSaleSeq();
+  return `SAL-${todayStr()}-${pad(seq)}`;
 }

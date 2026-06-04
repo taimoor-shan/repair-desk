@@ -4,7 +4,7 @@ import {
   getCustomer,
   getRepairJobsByCustomer,
   getSalesByCustomer,
-} from '../../db/db';
+} from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import StatusBadge from '../../components/StatusBadge';
 

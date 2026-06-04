@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getRepairJob, updateRepairJob, getCustomer } from '../../db/db';
-import { getSettings } from '../../db/db';
+import { getRepairJob, updateRepairJob, getCustomer, getSettings } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';

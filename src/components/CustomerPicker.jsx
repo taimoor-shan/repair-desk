@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getCustomer, searchCustomers } from '../db/db';
+import { getCustomer, searchCustomers } from '../lib/api';
 
 export default function CustomerPicker({ value, onChange, required = false }) {
   const [query, setQuery] = useState('');

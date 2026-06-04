@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getSale, getCustomer, getSettings } from '../../db/db';
+import { getSale, getCustomer, getSettings } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import PrintReceipt from '../../components/PrintReceipt';
 import ReactDOM from 'react-dom/client';

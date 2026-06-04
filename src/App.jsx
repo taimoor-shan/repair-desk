@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext';
 import { ConfirmProvider } from './context/ConfirmContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
+import Login from './pages/Login';
 import CustomerList from './pages/customers/CustomerList';
 import CustomerForm from './pages/customers/CustomerForm';
 import CustomerDetail from './pages/customers/CustomerDetail';
@@ -17,6 +19,24 @@ import SaleForm from './pages/sales/SaleForm';
 import SaleDetail from './pages/sales/SaleDetail';
 import ProductList from './pages/inventory/ProductList';
 import ProductForm from './pages/inventory/ProductForm';
+
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
 
 function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -40,21 +60,127 @@ function Layout() {
 
       <main className="flex-1 p-4 md:p-6 pt-16 md:pt-6 overflow-auto min-w-0">
         <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/customers" element={<CustomerList />} />
-          <Route path="/customers/new" element={<CustomerForm />} />
-          <Route path="/customers/:id" element={<CustomerDetail />} />
-          <Route path="/customers/:id/edit" element={<CustomerForm />} />
-          <Route path="/repairs" element={<RepairList />} />
-          <Route path="/repairs/new" element={<RepairForm />} />
-          <Route path="/repairs/:id" element={<RepairDetail />} />
-          <Route path="/sales" element={<SaleList />} />
-          <Route path="/sales/new" element={<SaleForm />} />
-          <Route path="/sales/:id" element={<SaleDetail />} />
-          <Route path="/inventory" element={<ProductList />} />
-          <Route path="/inventory/new" element={<ProductForm />} />
-          <Route path="/inventory/:id/edit" element={<ProductForm />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/customers"
+            element={
+              <ProtectedRoute>
+                <CustomerList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/customers/new"
+            element={
+              <ProtectedRoute>
+                <CustomerForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/customers/:id"
+            element={
+              <ProtectedRoute>
+                <CustomerDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/customers/:id/edit"
+            element={
+              <ProtectedRoute>
+                <CustomerForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/repairs"
+            element={
+              <ProtectedRoute>
+                <RepairList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/repairs/new"
+            element={
+              <ProtectedRoute>
+                <RepairForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/repairs/:id"
+            element={
+              <ProtectedRoute>
+                <RepairDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales"
+            element={
+              <ProtectedRoute>
+                <SaleList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales/new"
+            element={
+              <ProtectedRoute>
+                <SaleForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales/:id"
+            element={
+              <ProtectedRoute>
+                <SaleDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inventory"
+            element={
+              <ProtectedRoute>
+                <ProductList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inventory/new"
+            element={
+              <ProtectedRoute>
+                <ProductForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inventory/:id/edit"
+            element={
+              <ProtectedRoute>
+                <ProductForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Settings />
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </main>
     </div>
@@ -64,11 +190,13 @@ function Layout() {
 export default function App() {
   return (
     <HashRouter>
-      <ToastProvider>
-        <ConfirmProvider>
-          <Layout />
-        </ConfirmProvider>
-      </ToastProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <ConfirmProvider>
+            <Layout />
+          </ConfirmProvider>
+        </ToastProvider>
+      </AuthProvider>
     </HashRouter>
   );
 }

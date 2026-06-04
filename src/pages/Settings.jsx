@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { getSettings, updateSettings } from '../db/db';
+import { getSettings, updateSettings } from '../lib/api';
 import { useToast } from '../context/ToastContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { exportJSON, importJSON } from '../lib/backup';
@@ -101,7 +101,8 @@ export default function Settings() {
                   <img
                     src={form.shopLogo}
                     alt="Shop logo"
-                    className="h-16 w-16 object-contain border border-gray-200 rounded-lg"
+                    style={{ maxHeight: '64px', maxWidth: '200px', objectFit: 'contain' }}
+                    className="border border-gray-200 rounded-lg"
                   />
                   <button
                     type="button"

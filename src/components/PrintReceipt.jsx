@@ -16,7 +16,8 @@ export default function PrintReceipt({ shop, type, data }) {
           <img
             src={shop.shopLogo}
             alt="Logo"
-            className="w-20 h-20 mx-auto mb-3 object-contain"
+            style={{ maxHeight: '48px', maxWidth: '200px', objectFit: 'contain' }}
+            className="mx-auto mb-3"
           />
         )}
         <h2 className="text-base font-bold">

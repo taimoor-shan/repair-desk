@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getProducts } from '../db/db';
+import { getProducts } from '../lib/api';
 
 export default function ProductPicker({ onSelect }) {
   const [query, setQuery] = useState('');

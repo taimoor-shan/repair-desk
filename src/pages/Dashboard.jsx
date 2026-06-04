@@ -1,18 +1,23 @@
-import { useLiveQuery } from 'dexie-react-hooks';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import db from '../db/db';
+import { getCustomers, getProducts, getRepairJobs, getSales } from '../lib/api';
 import { formatCurrency, todayRange, monthRange } from '../lib/helpers';
 import StatusBadge from '../components/StatusBadge';
 
 export default function Dashboard() {
   const navigate = useNavigate();
 
-  const customers = useLiveQuery(() => db.customers.toArray(), []) || [];
-  const products =
-    useLiveQuery(() => db.products.toArray(), []) || [];
-  const allSales = useLiveQuery(() => db.sales.toArray(), []) || [];
-  const allRepairs =
-    useLiveQuery(() => db.repairJobs.toArray(), []) || [];
+  const [customers, setCustomers] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [allSales, setAllSales] = useState([]);
+  const [allRepairs, setAllRepairs] = useState([]);
+
+  useEffect(() => {
+    getCustomers().then(setCustomers);
+    getProducts().then(setProducts);
+    getSales().then(setAllSales);
+    getRepairJobs().then(setAllRepairs);
+  }, []);
 
   const today = todayRange();
   const month = monthRange();

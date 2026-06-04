@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getCustomers, searchCustomers, deleteCustomer } from '../../db/db';
+import { getCustomers, searchCustomers, deleteCustomer } from '../../lib/api';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import EmptyState from '../../components/EmptyState';

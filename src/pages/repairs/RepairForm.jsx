@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { addRepairJob } from '../../db/db';
+import { addRepairJob } from '../../lib/api';
 import { generateRepairNumber } from '../../lib/receiptNumber';
 import { useToast } from '../../context/ToastContext';
 import CustomerPicker from '../../components/CustomerPicker';

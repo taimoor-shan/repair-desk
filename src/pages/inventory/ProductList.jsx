@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getProducts, deleteProduct, adjustStock } from '../../db/db';
+import { getProducts, deleteProduct, adjustStock } from '../../lib/api';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { formatCurrency } from '../../lib/helpers';

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getProduct, addProduct, updateProduct } from '../../db/db';
+import { getProduct, addProduct, updateProduct } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 
 const initial = {

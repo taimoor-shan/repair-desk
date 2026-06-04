@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { addSale, getProduct, updateProduct } from '../../db/db';
+import { addSale, getProduct, updateProduct } from '../../lib/api';
 import { generateSaleNumber } from '../../lib/receiptNumber';
 import { useToast } from '../../context/ToastContext';
 import CustomerPicker from '../../components/CustomerPicker';

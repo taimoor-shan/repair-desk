@@ -5,7 +5,7 @@ import {
   addCustomer,
   updateCustomer,
   getCustomerByPhone,
-} from '../../db/db';
+} from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 
 const initial = {
