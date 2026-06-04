@@ -115,7 +115,7 @@ export default function RepairDetail() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <div>
           <Link
             to="/repairs"

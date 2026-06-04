@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getCustomers, searchCustomers, deleteCustomer } from '../../lib/api';
+import { getCustomers, searchCustomers, deleteCustomer, getRepairJobsByCustomer, getSalesByCustomer } from '../../lib/api';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import EmptyState from '../../components/EmptyState';
@@ -20,10 +20,20 @@ export default function CustomerList() {
   }, [query]);
 
   async function handleDelete(customer) {
-    const ok = await confirm(
-      'Delete Customer',
-      `Delete "${customer.name}"? This cannot be undone.`
-    );
+    const [repairs, sales] = await Promise.all([
+      getRepairJobsByCustomer(customer.id),
+      getSalesByCustomer(customer.id),
+    ]);
+
+    const parts = [`Delete "${customer.name}"?`];
+    if (repairs.length > 0 || sales.length > 0) {
+      parts.push(
+        `This customer has ${repairs.length} repair${repairs.length !== 1 ? 's' : ''} and ${sales.length} sale${sales.length !== 1 ? 's' : ''}. These records will be kept but marked as Walk-in.`
+      );
+    }
+    parts.push('This cannot be undone.');
+
+    const ok = await confirm('Delete Customer', parts.join(' '));
     if (!ok) return;
     await deleteCustomer(customer.id);
     setCustomers((prev) => prev.filter((c) => c.id !== customer.id));
