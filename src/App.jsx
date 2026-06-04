@@ -3,7 +3,9 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext';
 import { ConfirmProvider } from './context/ConfirmContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { NotificationProvider } from './context/NotificationContext';
 import Sidebar from './components/Sidebar';
+import BellIcon from './components/BellIcon';
 
 import Dashboard from './pages/Dashboard';
 import Settings from './pages/Settings';
@@ -56,6 +58,14 @@ function Layout() {
           </svg>
         </button>
         <h1 className="text-base font-bold text-gray-900">Repair Desk</h1>
+        <div className="ml-auto md:hidden">
+          <BellIcon />
+        </div>
+      </div>
+
+      {/* Desktop bell — fixed bottom-right corner */}
+      <div className="hidden md:block fixed bottom-5 right-5 z-40 bg-white rounded-full shadow-md p-1">
+        <BellIcon direction="up" />
       </div>
 
       <main className="flex-1 p-4 md:p-6 pt-16 md:pt-6 overflow-auto min-w-0">
@@ -191,11 +201,13 @@ export default function App() {
   return (
     <HashRouter>
       <AuthProvider>
+        <NotificationProvider>
         <ToastProvider>
           <ConfirmProvider>
             <Layout />
           </ConfirmProvider>
         </ToastProvider>
+        </NotificationProvider>
       </AuthProvider>
     </HashRouter>
   );

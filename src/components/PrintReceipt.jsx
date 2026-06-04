@@ -1,6 +1,16 @@
 import { formatCurrency } from '../lib/helpers';
 
-const labelClass = 'font-medium pr-3 py-1.5 w-20 text-gray-600 align-top';
+const printStyles = `
+  @media print {
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .print-area { padding: 16px !important; }
+    body { margin: 0; }
+  }
+  @page {
+    margin: 0;
+    size: auto;
+  }
+`;
 
 export default function PrintReceipt({ shop, type, data }) {
   if (!data) return null;
@@ -8,165 +18,167 @@ export default function PrintReceipt({ shop, type, data }) {
   const isRepair = type === 'repair';
   const isSale = type === 'sale';
 
+  const s = {
+    wrap: {
+      fontFamily: "'Courier New', Courier, monospace",
+      fontSize: '12px',
+      lineHeight: '1.5',
+      color: '#111',
+      background: '#fff',
+      maxWidth: '320px',
+      margin: '0 auto',
+      padding: '20px 16px',
+    },
+    center: { textAlign: 'center', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px dashed #aaa' },
+    shopName: { fontSize: '14px', fontWeight: 'bold', margin: '4px 0 2px' },
+    sub: { fontSize: '11px', color: '#555', margin: '1px 0' },
+    divider: { borderTop: '1px dashed #aaa', margin: '10px 0' },
+    row: { display: 'flex', justifyContent: 'space-between', padding: '2px 0' },
+    label: { color: '#555' },
+    bold: { fontWeight: 'bold' },
+    totalRow: { display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontWeight: 'bold', fontSize: '13px' },
+    table: { width: '100%', borderCollapse: 'collapse', marginBottom: '8px' },
+    th: { textAlign: 'left', fontWeight: 'bold', paddingBottom: '4px', borderBottom: '1px solid #ccc', fontSize: '11px' },
+    thRight: { textAlign: 'right', fontWeight: 'bold', paddingBottom: '4px', borderBottom: '1px solid #ccc', fontSize: '11px' },
+    td: { padding: '3px 0', verticalAlign: 'top', fontSize: '11px' },
+    tdRight: { padding: '3px 0', textAlign: 'right', verticalAlign: 'top', fontSize: '11px' },
+    tdCenter: { padding: '3px 0', textAlign: 'center', verticalAlign: 'top', fontSize: '11px' },
+    metaRow: { display: 'flex', gap: '8px', padding: '2px 0' },
+    metaLabel: { color: '#555', minWidth: '52px' },
+    footer: { textAlign: 'center', marginTop: '12px', paddingTop: '8px', borderTop: '1px dashed #aaa', fontSize: '11px', color: '#777' },
+  };
+
   return (
-    <div className="print-area p-6 max-w-md mx-auto bg-white text-black text-sm leading-relaxed">
-      {/* Shop Header */}
-      <div className="text-center mb-5 pb-4 border-b border-dashed border-gray-300">
-        {shop?.shopLogo && (
-          <img
-            src={shop.shopLogo}
-            alt="Logo"
-            style={{ maxHeight: '48px', maxWidth: '200px', objectFit: 'contain' }}
-            className="mx-auto mb-3"
-          />
-        )}
-        <h2 className="text-base font-bold">
-          {shop?.shopName || 'Repair Desk'}
-        </h2>
-        {shop?.shopAddress && (
-          <p className="text-xs text-gray-600 mt-0.5">{shop.shopAddress}</p>
-        )}
-        {shop?.shopPhone && (
-          <p className="text-xs text-gray-600">{shop.shopPhone}</p>
-        )}
-      </div>
+    <>
+      <style>{printStyles}</style>
+      <div className="print-area" style={s.wrap}>
 
-      {/* Receipt Info */}
-      <div className="text-xs mb-4">
-        <span>
-          Receipt: <strong>{data.receiptNumber}</strong>
-        </span>
-      </div>
-
-      {/* Customer Info */}
-      {data._customer && (
-        <div className="mb-4 text-xs space-y-0.5">
-          <p>
-            <strong>Customer:</strong> {data._customer.name}
-          </p>
-          {data._customer.phone && (
-            <p>
-              <strong>Phone:</strong> {data._customer.phone}
-            </p>
+        {/* Header */}
+        <div style={s.center}>
+          {shop?.shopLogo && (
+            <img src={shop.shopLogo} alt="Logo"
+              style={{ maxHeight: '44px', maxWidth: '180px', objectFit: 'contain', display: 'block', margin: '0 auto 6px' }} />
           )}
+          <p style={s.shopName}>{shop?.shopName || 'Repair Desk'}</p>
+          {shop?.shopAddress && <p style={s.sub}>{shop.shopAddress}</p>}
+          {shop?.shopPhone && <p style={s.sub}>{shop.shopPhone}</p>}
         </div>
-      )}
 
-      {/* Repair Details */}
-      {isRepair && (
-        <div className="mb-4">
-          <table className="w-full text-xs">
-            <tbody>
-              <tr>
-                <td className={labelClass}>Brand</td>
-                <td className="py-1.5">{data.mobileBrand}</td>
-              </tr>
-              <tr>
-                <td className={labelClass}>Model</td>
-                <td className="py-1.5">{data.mobileModel}</td>
-              </tr>
-              {data.imei && (
-                <tr>
-                  <td className={labelClass}>IMEI</td>
-                  <td className="py-1.5 break-all">{data.imei}</td>
-                </tr>
-              )}
-              <tr>
-                <td className={labelClass}>Problem</td>
-                <td className="py-1.5">{data.problemDescription}</td>
-              </tr>
-              <tr>
-                <td className={labelClass}>Status</td>
-                <td className="py-1.5">{data.status}</td>
-              </tr>
-            </tbody>
-          </table>
+        {/* Receipt number + date */}
+        <div style={{ ...s.row, marginBottom: '2px' }}>
+          <span>Receipt: <strong>{data.receiptNumber}</strong></span>
+          <span style={s.label}>{new Date().toLocaleDateString()}</span>
         </div>
-      )}
 
-      {/* Sale Items */}
-      {isSale && data.items && (
-        <div className="mb-4">
-          <table className="w-full text-xs">
+        {/* Customer */}
+        {data._customer && (
+          <div style={{ marginBottom: '8px' }}>
+            <div style={s.divider} />
+            <div style={s.metaRow}>
+              <span style={s.metaLabel}>Customer:</span>
+              <span>{data._customer.name}</span>
+            </div>
+            {data._customer.phone && (
+              <div style={s.metaRow}>
+                <span style={s.metaLabel}>Phone:</span>
+                <span>{data._customer.phone}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={s.divider} />
+
+        {/* Repair details */}
+        {isRepair && (
+          <div style={{ marginBottom: '8px' }}>
+            {[
+              ['Brand', data.mobileBrand],
+              ['Model', data.mobileModel],
+              data.imei ? ['IMEI', data.imei] : null,
+              ['Problem', data.problemDescription],
+              ['Status', data.status],
+            ].filter(Boolean).map(([label, value]) => (
+              <div key={label} style={s.metaRow}>
+                <span style={s.metaLabel}>{label}:</span>
+                <span style={{ wordBreak: 'break-word' }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Sale items */}
+        {isSale && data.items && (
+          <table style={s.table}>
             <thead>
-              <tr className="border-b border-gray-300">
-                <th className="text-left py-1.5">Item</th>
-                <th className="text-center py-1.5">Qty</th>
-                <th className="text-right py-1.5">Price</th>
-                <th className="text-right py-1.5">Total</th>
+              <tr>
+                <th style={{ ...s.th, width: '44%' }}>Item</th>
+                <th style={{ ...s.th, ...s.tdCenter, width: '12%' }}>Qty</th>
+                <th style={{ ...s.thRight, width: '22%' }}>Price</th>
+                <th style={{ ...s.thRight, width: '22%' }}>Total</th>
               </tr>
             </thead>
             <tbody>
               {data.items.map((item, i) => (
-                <tr key={i} className="border-b border-gray-100">
-                  <td className="py-1.5">{item.productName}</td>
-                  <td className="text-center py-1.5">{item.quantity}</td>
-                  <td className="text-right py-1.5">
-                    {formatCurrency(item.unitPrice)}
-                  </td>
-                  <td className="text-right py-1.5">
-                    {formatCurrency(item.quantity * item.unitPrice)}
-                  </td>
+                <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                  <td style={s.td}>{item.productName}</td>
+                  <td style={s.tdCenter}>{item.quantity}</td>
+                  <td style={s.tdRight}>{formatCurrency(item.unitPrice)}</td>
+                  <td style={s.tdRight}>{formatCurrency(item.quantity * item.unitPrice)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+
+        {/* Totals */}
+        <div style={s.divider} />
+        <div style={{ paddingTop: '4px' }}>
+          {isRepair && (
+            <>
+              <div style={s.row}>
+                <span style={s.label}>Estimated Cost</span>
+                <span>{formatCurrency(data.estimatedCost)}</span>
+              </div>
+              {data.finalCost != null && (
+                <div style={s.totalRow}>
+                  <span>Final Cost</span>
+                  <span>{formatCurrency(data.finalCost)}</span>
+                </div>
+              )}
+            </>
+          )}
+          {isSale && (
+            <>
+              <div style={s.row}>
+                <span style={s.label}>Subtotal</span>
+                <span>{formatCurrency(data.totalAmount)}</span>
+              </div>
+              {data.discount > 0 && (
+                <div style={s.row}>
+                  <span style={s.label}>Discount</span>
+                  <span>−{formatCurrency(data.discount)}</span>
+                </div>
+              )}
+              <div style={s.totalRow}>
+                <span>Total</span>
+                <span>{formatCurrency(data.totalAmount - (data.discount || 0))}</span>
+              </div>
+              <div style={s.row}>
+                <span style={s.label}>Payment</span>
+                <span>{data.paymentMethod}</span>
+              </div>
+            </>
+          )}
         </div>
-      )}
 
-      {/* Totals */}
-      <div className="border-t border-dashed border-gray-300 pt-3 space-y-2 text-xs">
-        {isRepair && (
-          <>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Estimated Cost</span>
-              <span className="font-medium">
-                {formatCurrency(data.estimatedCost)}
-              </span>
-            </div>
-            {data.finalCost != null && (
-              <div className="flex justify-between font-bold text-sm">
-                <span>Final Cost</span>
-                <span>{formatCurrency(data.finalCost)}</span>
-              </div>
-            )}
-          </>
-        )}
-        {isSale && (
-          <>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Subtotal</span>
-              <span className="font-medium">
-                {formatCurrency(data.totalAmount)}
-              </span>
-            </div>
-            {data.discount > 0 && (
-              <div className="flex justify-between">
-                <span className="text-gray-600">Discount</span>
-                <span className="text-red-600">
-                  −{formatCurrency(data.discount)}
-                </span>
-              </div>
-            )}
-            <div className="flex justify-between font-bold text-sm pt-1">
-              <span>Total</span>
-              <span>
-                {formatCurrency(data.totalAmount - (data.discount || 0))}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Payment</span>
-              <span className="font-medium">{data.paymentMethod}</span>
-            </div>
-          </>
-        )}
-      </div>
+        {/* Footer */}
+        <div style={s.footer}>
+          <p style={{ margin: '0 0 2px' }}>Thank you for your business!</p>
+          <p style={{ margin: 0 }}>{new Date().toLocaleString()}</p>
+        </div>
 
-      {/* Footer */}
-      <div className="text-center mt-5 pt-3 border-t border-dashed border-gray-300 text-xs text-gray-400">
-        <p className="mb-0.5">Thank you!</p>
-        <p>{new Date().toLocaleString()}</p>
       </div>
-    </div>
+    </>
   );
 }

@@ -240,15 +240,15 @@ export default function Dashboard() {
 
       {/* Low Stock Alert */}
       {lowStock.length > 0 && (
-        <div className="mt-6 bg-red-50 rounded-xl border border-red-200 p-5">
+        <div className="mt-6">
           <h3 className="text-sm font-semibold text-red-800 mb-3">
             Low Stock Alert
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
             {lowStock.map((p) => (
               <div
                 key={p.id}
-                className="flex justify-between items-center bg-white/60 rounded-lg px-3 py-2 cursor-pointer hover:bg-white"
+                className="flex justify-between items-center bg-white/60 rounded-sm cursor-pointer hover:bg-white bg-red-50 rounded-xl border border-red-200 px-4 py-2 hover:shadow-md"
                 onClick={() => navigate(`/inventory/${p.id}/edit`)}
               >
                 <span className="text-sm text-gray-900">{p.name}</span>
