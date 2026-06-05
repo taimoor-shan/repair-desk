@@ -1,20 +1,36 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { addSale, getProduct, updateProduct } from '../../lib/api';
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { addSale, getSale, updateSale, getProduct, updateProduct } from '../../lib/api';
 import { generateSaleNumber } from '../../lib/receiptNumber';
 import { useToast } from '../../context/ToastContext';
 import CustomerPicker from '../../components/CustomerPicker';
 import ProductPicker from '../../components/ProductPicker';
 
 export default function SaleForm() {
+  const { id } = useParams();
   const navigate = useNavigate();
   const addToast = useToast();
+  const isEdit = Boolean(id);
 
   const [customerId, setCustomerId] = useState(null);
   const [items, setItems] = useState([]);
   const [discount, setDiscount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [errors, setErrors] = useState({});
+  const [oldItems, setOldItems] = useState([]); // snapshot for stock reversal on edit
+
+  useEffect(() => {
+    if (id) {
+      getSale(id).then((s) => {
+        if (!s) return navigate('/sales');
+        setCustomerId(s.customerId || null);
+        setItems(s.items || []);
+        setOldItems(s.items || []);
+        setDiscount(String(s.discount || ''));
+        setPaymentMethod(s.paymentMethod || 'Cash');
+      });
+    }
+  }, [id, navigate]);
 
   function addItem(product) {
     const existing = items.find((i) => i.productId === product.id);
@@ -39,6 +55,7 @@ export default function SaleForm() {
         productName: product.name,
         quantity: 1,
         unitPrice: product.sellingPrice,
+        unitCost: product.costPrice || 0,
       },
     ]);
     setErrors((prev) => ({
@@ -92,30 +109,63 @@ export default function SaleForm() {
       (sum, i) => sum + i.quantity * i.unitPrice,
       0
     );
-    const receiptNumber = await generateSaleNumber();
 
-    // Decrement stock
-    for (const item of items) {
-      const product = await getProduct(item.productId);
-      if (product) {
-        await updateProduct(item.productId, {
-          stock: product.stock - item.quantity,
-        });
+    if (isEdit) {
+      // Restore stock for old items
+      for (const item of oldItems) {
+        const product = await getProduct(item.productId);
+        if (product) {
+          await updateProduct(item.productId, {
+            stock: (product.stock || 0) + item.quantity,
+          });
+        }
       }
+
+      await updateSale(id, {
+        customerId: customerId ? Number(customerId) : null,
+        items,
+        totalAmount,
+        discount: Number(discount) || 0,
+        paymentMethod,
+      });
+
+      // Decrement stock for new items
+      for (const item of items) {
+        const product = await getProduct(item.productId);
+        if (product) {
+          await updateProduct(item.productId, {
+            stock: product.stock - item.quantity,
+          });
+        }
+      }
+
+      addToast('Sale updated');
+    } else {
+      const receiptNumber = await generateSaleNumber();
+
+      // Decrement stock
+      for (const item of items) {
+        const product = await getProduct(item.productId);
+        if (product) {
+          await updateProduct(item.productId, {
+            stock: product.stock - item.quantity,
+          });
+        }
+      }
+
+      await addSale({
+        customerId: customerId ? Number(customerId) : null,
+        saleType: 'Accessory',
+        items,
+        totalAmount,
+        discount: Number(discount) || 0,
+        paymentMethod,
+        createdAt: new Date().toISOString(),
+        receiptNumber,
+      });
+
+      addToast('Sale completed');
     }
-
-    await addSale({
-      customerId: customerId ? Number(customerId) : null,
-      saleType: 'Accessory',
-      items,
-      totalAmount,
-      discount: Number(discount) || 0,
-      paymentMethod,
-      createdAt: new Date().toISOString(),
-      receiptNumber,
-    });
-
-    addToast('Sale completed');
     navigate('/sales');
   }
 
@@ -124,7 +174,9 @@ export default function SaleForm() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">New Sale</h2>
+      <h2 className="text-2xl font-bold text-gray-900 mb-6">
+        {isEdit ? 'Edit Sale' : 'New Sale'}
+      </h2>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           {/* Customer */}
@@ -253,7 +305,7 @@ export default function SaleForm() {
             onClick={handleSubmit}
             className="w-full px-4 py-2.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700"
           >
-            Complete Sale
+            {isEdit ? 'Update Sale' : 'Complete Sale'}
           </button>
         </div>
       </div>

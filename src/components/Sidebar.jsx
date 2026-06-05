@@ -6,6 +6,7 @@ const links = [
   { to: '/repairs', label: 'Repairs', icon: '🔧' },
   { to: '/sales', label: 'Sales', icon: '💰' },
   { to: '/inventory', label: 'Inventory', icon: '📦' },
+  { to: '/analytics', label: 'Analytics', icon: '📈' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 

@@ -1,8 +1,6 @@
 import { supabase } from '../supabase';
 
 // ─── Column Mappers ───────────────────────────────────────────────
-// Supabase returns snake_case. Our app uses camelCase.
-// Every read/write function maps through these.
 
 // ── Customer ──
 function toCustomer(row) {
@@ -61,6 +59,7 @@ function toRepairJob(row) {
   return {
     id: row.id,
     customerId: row.customer_id,
+    deviceId: row.device_id,
     mobileBrand: row.mobile_brand,
     mobileModel: row.mobile_model,
     imei: row.imei,
@@ -78,6 +77,7 @@ function toRepairJob(row) {
 function fromRepairJob(obj) {
   return {
     customer_id: obj.customerId,
+    device_id: obj.deviceId,
     mobile_brand: obj.mobileBrand,
     mobile_model: obj.mobileModel,
     imei: obj.imei,
@@ -145,6 +145,108 @@ function fromSettings(obj) {
     last_repair_date: obj.lastRepairDate,
     last_sale_seq: obj.lastSaleSeq,
     last_sale_date: obj.lastSaleDate,
+  };
+}
+
+// ── Device ──
+function toDevice(row) {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    brand: row.brand,
+    model: row.model,
+    imei: row.imei,
+    color: row.color,
+    notes: row.notes,
+    createdAt: row.created_at,
+  };
+}
+
+function fromDevice(obj) {
+  return {
+    customer_id: obj.customerId,
+    brand: obj.brand,
+    model: obj.model,
+    imei: obj.imei,
+    color: obj.color,
+    notes: obj.notes,
+    created_at: obj.createdAt,
+  };
+}
+
+// ── RepairPart ──
+function toRepairPart(row) {
+  return {
+    id: row.id,
+    repairJobId: row.repair_job_id,
+    productId: row.product_id,
+    productName: row.product_name,
+    costPrice: row.cost_price != null ? Number(row.cost_price) : 0,
+    sellingPrice: row.selling_price != null ? Number(row.selling_price) : 0,
+    quantity: Number(row.quantity),
+  };
+}
+
+function fromRepairPart(obj) {
+  return {
+    repair_job_id: obj.repairJobId,
+    product_id: obj.productId,
+    product_name: obj.productName,
+    cost_price: obj.costPrice,
+    selling_price: obj.sellingPrice,
+    quantity: obj.quantity,
+  };
+}
+
+// ── Expense ──
+function toExpense(row) {
+  return {
+    id: row.id,
+    category: row.category,
+    amount: Number(row.amount),
+    note: row.note,
+    date: row.date,
+    createdAt: row.created_at,
+  };
+}
+
+function fromExpense(obj) {
+  return {
+    category: obj.category,
+    amount: obj.amount,
+    note: obj.note,
+    date: obj.date,
+    created_at: obj.createdAt,
+  };
+}
+
+// ── StockPurchase ──
+function toStockPurchase(row) {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    productName: row.product_name,
+    quantity: Number(row.quantity),
+    unitCost: Number(row.unit_cost),
+    totalCost: Number(row.total_cost),
+    supplier: row.supplier,
+    note: row.note,
+    date: row.date,
+    createdAt: row.created_at,
+  };
+}
+
+function fromStockPurchase(obj) {
+  return {
+    product_id: obj.productId,
+    product_name: obj.productName,
+    quantity: obj.quantity,
+    unit_cost: obj.unitCost,
+    total_cost: obj.totalCost,
+    supplier: obj.supplier,
+    note: obj.note,
+    date: obj.date,
+    created_at: obj.createdAt,
   };
 }
 
@@ -354,6 +456,31 @@ export async function updateSale(id, data) {
 }
 
 export async function deleteSale(id) {
+  const { data: sale, error: fetchErr } = await supabase
+    .from('sales')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (fetchErr) throw new Error(fetchErr.message);
+
+  if (sale?.items?.length) {
+    for (const item of sale.items) {
+      const { data: product, error: prodErr } = await supabase
+        .from('products')
+        .select('stock')
+        .eq('id', item.productId)
+        .single();
+      if (prodErr) throw new Error(prodErr.message);
+      if (product) {
+        const { error: updErr } = await supabase
+          .from('products')
+          .update({ stock: (product.stock || 0) + item.quantity })
+          .eq('id', item.productId);
+        if (updErr) throw new Error(updErr.message);
+      }
+    }
+  }
+
   const { error } = await supabase.from('sales').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
@@ -420,14 +547,19 @@ export async function getNextSaleSeq() {
 // ─── Backup ────────────────────────────────────────────────────────
 
 export async function exportData() {
-  const [customers, products, repairJobs, sales, settings] = await Promise.all([
-    supabase.from('customers').select('*').then(r => r.data),
-    supabase.from('products').select('*').then(r => r.data),
-    supabase.from('repair_jobs').select('*').then(r => r.data),
-    supabase.from('sales').select('*').then(r => r.data),
-    supabase.from('settings').select('*').then(r => r.data),
-  ]);
-  return { customers, products, repairJobs, sales, settings };
+  const [customers, products, repairJobs, sales, settings, devices, repairParts, expenses, stockPurchases] =
+    await Promise.all([
+      supabase.from('customers').select('*').then((r) => r.data),
+      supabase.from('products').select('*').then((r) => r.data),
+      supabase.from('repair_jobs').select('*').then((r) => r.data),
+      supabase.from('sales').select('*').then((r) => r.data),
+      supabase.from('settings').select('*').then((r) => r.data),
+      supabase.from('devices').select('*').then((r) => r.data),
+      supabase.from('repair_parts').select('*').then((r) => r.data),
+      supabase.from('expenses').select('*').then((r) => r.data),
+      supabase.from('stock_purchases').select('*').then((r) => r.data),
+    ]);
+  return { customers, products, repairJobs, sales, settings, devices, repairParts, expenses, stockPurchases };
 }
 
 export async function importData(json) {
@@ -437,4 +569,372 @@ export async function importData(json) {
     const { error } = await supabase.from(table).upsert(rows);
     if (error) throw new Error(error.message);
   }
+}
+
+// ============================================================
+//  NEW — Devices
+// ============================================================
+
+export async function getDevicesByCustomer(customerId) {
+  const { data, error } = await supabase
+    .from('devices')
+    .select('*')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data.map(toDevice);
+}
+
+export async function getDeviceByIMEI(imei) {
+  if (!imei) return null;
+  const { data, error } = await supabase
+    .from('devices')
+    .select('*')
+    .eq('imei', imei)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? toDevice(data) : null;
+}
+
+export async function addDevice(device) {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('devices')
+    .insert(fromDevice({ ...device, createdAt: now }))
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return toDevice(data);
+}
+
+export async function updateDevice(id, deviceData) {
+  const { data, error } = await supabase
+    .from('devices')
+    .update(fromDevice(deviceData))
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return toDevice(data);
+}
+
+// ============================================================
+//  NEW — Repair Parts
+// ============================================================
+
+export async function getRepairParts(repairJobId) {
+  const { data, error } = await supabase
+    .from('repair_parts')
+    .select('*')
+    .eq('repair_job_id', repairJobId);
+  if (error) throw new Error(error.message);
+  return data.map(toRepairPart);
+}
+
+export async function addRepairParts(repairJobId, parts) {
+  const rows = parts.map((p) => ({
+    repair_job_id: repairJobId,
+    product_id: p.productId,
+    product_name: p.productName,
+    cost_price: p.costPrice,
+    selling_price: p.sellingPrice,
+    quantity: p.quantity,
+  }));
+  const { error } = await supabase.from('repair_parts').insert(rows);
+  if (error) throw new Error(error.message);
+}
+
+// ============================================================
+//  NEW — Expenses
+// ============================================================
+
+export async function getExpenses(rangeStart, rangeEnd) {
+  let query = supabase.from('expenses').select('*').order('date', { ascending: false });
+  if (rangeStart && rangeEnd) {
+    query = query.gte('date', rangeStart).lte('date', rangeEnd);
+  }
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return data.map(toExpense);
+}
+
+export async function addExpense(expense) {
+  const { data, error } = await supabase
+    .from('expenses')
+    .insert(fromExpense(expense))
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return toExpense(data).id;
+}
+
+export async function updateExpense(id, data) {
+  const { error } = await supabase
+    .from('expenses')
+    .update(fromExpense(data))
+    .eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteExpense(id) {
+  const { error } = await supabase.from('expenses').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+// ============================================================
+//  NEW — Stock Purchases
+// ============================================================
+
+export async function getStockPurchases(rangeStart, rangeEnd) {
+  let query = supabase.from('stock_purchases').select('*').order('date', { ascending: false });
+  if (rangeStart && rangeEnd) {
+    query = query.gte('date', rangeStart).lte('date', rangeEnd);
+  }
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return data.map(toStockPurchase);
+}
+
+export async function addStockPurchase(purchase) {
+  const { data, error } = await supabase
+    .from('stock_purchases')
+    .insert(fromStockPurchase(purchase))
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+
+  // Increment stock
+  const { data: product } = await supabase
+    .from('products')
+    .select('stock')
+    .eq('id', purchase.productId)
+    .single();
+  if (product) {
+    await supabase
+      .from('products')
+      .update({ stock: product.stock + purchase.quantity })
+      .eq('id', purchase.productId);
+  }
+
+  return toStockPurchase(data).id;
+}
+
+export async function deleteStockPurchase(id) {
+  const { data: purchase } = await supabase
+    .from('stock_purchases')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (purchase) {
+    // Decrement stock
+    const { data: product } = await supabase
+      .from('products')
+      .select('stock')
+      .eq('id', purchase.product_id)
+      .single();
+    if (product) {
+      await supabase
+        .from('products')
+        .update({ stock: Math.max(0, product.stock - purchase.quantity) })
+        .eq('id', purchase.product_id);
+    }
+  }
+
+  const { error } = await supabase.from('stock_purchases').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+// ============================================================
+//  NEW — Analytics
+// ============================================================
+
+export async function getAnalyticsData(rangeStart, rangeEnd) {
+  const [
+    { data: salesData },
+    { data: repairsData },
+    { data: repairPartsData },
+    { data: expensesData },
+    { data: stockPurchasesData },
+  ] = await Promise.all([
+    supabase.from('sales').select('*'),
+    supabase.from('repair_jobs').select('*'),
+    supabase.from('repair_parts').select('*'),
+    supabase.from('expenses').select('*'),
+    supabase.from('stock_purchases').select('*'),
+  ]);
+
+  const allSales = (salesData || []).map(toSale);
+  const allRepairs = (repairsData || []).map(toRepairJob);
+  const allRepairParts = (repairPartsData || []).map(toRepairPart);
+  const allExpenses = (expensesData || []).map(toExpense);
+  const allStockPurchases = (stockPurchasesData || []).map(toStockPurchase);
+
+  const inRange = (d) => {
+    if (!d) return false;
+    return d >= rangeStart && d <= (rangeEnd || '9999');
+  };
+
+  // --- Revenue ---
+  const salesRevenue = allSales
+    .filter((s) => inRange(s.createdAt?.slice(0, 10)))
+    .reduce((sum, s) => sum + (s.totalAmount || 0) - (s.discount || 0), 0);
+
+  const repairRevenue = allRepairs
+    .filter((r) => r.status === 'Delivered' && r.finalCost != null && inRange(r.deliveredAt?.slice(0, 10)))
+    .reduce((sum, r) => sum + (r.finalCost || 0), 0);
+
+  // --- COGS ---
+  const salesCOGS = allSales
+    .filter((s) => inRange(s.createdAt?.slice(0, 10)))
+    .reduce((sum, s) => {
+      if (!s.items) return sum;
+      return sum + s.items.reduce((is, item) => is + (item.unitCost || 0) * (item.quantity || 0), 0);
+    }, 0);
+
+  const deliveredJobIds = new Set(
+    allRepairs
+      .filter((r) => r.status === 'Delivered' && inRange(r.deliveredAt?.slice(0, 10)))
+      .map((r) => r.id)
+  );
+  const repairCOGS = allRepairParts
+    .filter((rp) => deliveredJobIds.has(rp.repairJobId))
+    .reduce((sum, rp) => sum + (rp.costPrice || 0) * (rp.quantity || 0), 0);
+
+  const totalCOGS = salesCOGS + repairCOGS;
+  const totalRevenue = salesRevenue + repairRevenue;
+  const grossProfit = totalRevenue - totalCOGS;
+
+  // --- Expenses ---
+  const filteredExpenses = allExpenses.filter((e) => inRange(e.date));
+  const expensesTotal = filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+  const byCategory = {};
+  filteredExpenses.forEach((e) => {
+    const cat = e.category || 'Other';
+    byCategory[cat] = (byCategory[cat] || 0) + (e.amount || 0);
+  });
+
+  const netProfit = grossProfit - expensesTotal;
+
+  // --- Stock Cash Flow ---
+  const stockCashFlow = allStockPurchases
+    .filter((p) => inRange(p.date))
+    .reduce((sum, p) => sum + (p.totalCost || 0), 0);
+
+  // --- Charts: daily ---
+  const dailyMap = {};
+  allSales.filter((s) => inRange(s.createdAt?.slice(0, 10))).forEach((s) => {
+    const d = s.createdAt?.slice(0, 10);
+    if (!dailyMap[d]) dailyMap[d] = { revenue: 0, cogs: 0, expenses: 0 };
+    dailyMap[d].revenue += (s.totalAmount || 0) - (s.discount || 0);
+    dailyMap[d].cogs += (s.items || []).reduce((is, item) => is + (item.unitCost || 0) * (item.quantity || 0), 0);
+  });
+  allRepairs.filter((r) => r.status === 'Delivered' && r.finalCost != null && inRange(r.deliveredAt?.slice(0, 10))).forEach((r) => {
+    const d = r.deliveredAt?.slice(0, 10);
+    if (!dailyMap[d]) dailyMap[d] = { revenue: 0, cogs: 0, expenses: 0 };
+    dailyMap[d].revenue += r.finalCost || 0;
+  });
+  allRepairs.filter((r) => r.status === 'Delivered' && inRange(r.deliveredAt?.slice(0, 10))).forEach((r) => {
+    const d = r.deliveredAt?.slice(0, 10);
+    if (!dailyMap[d]) dailyMap[d] = { revenue: 0, cogs: 0, expenses: 0 };
+    const parts = allRepairParts.filter((rp) => rp.repairJobId === r.id);
+    dailyMap[d].cogs += parts.reduce((sum, rp) => sum + (rp.costPrice || 0) * (rp.quantity || 0), 0);
+  });
+  filteredExpenses.forEach((e) => {
+    if (!dailyMap[e.date]) dailyMap[e.date] = { revenue: 0, cogs: 0, expenses: 0 };
+    dailyMap[e.date].expenses += e.amount || 0;
+  });
+  const daily = Object.entries(dailyMap)
+    .map(([date, vals]) => ({ date, ...vals }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // --- Charts: monthly ---
+  const monthlyMap = {};
+  const last6 = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    last6.push(key);
+    monthlyMap[key] = { revenue: 0, cogs: 0, expenses: 0 };
+  }
+  allSales.forEach((s) => {
+    if (!s.createdAt) return;
+    const m = s.createdAt.slice(0, 7);
+    if (monthlyMap[m]) {
+      monthlyMap[m].revenue += (s.totalAmount || 0) - (s.discount || 0);
+      monthlyMap[m].cogs += (s.items || []).reduce((is, item) => is + (item.unitCost || 0) * (item.quantity || 0), 0);
+    }
+  });
+  allRepairs.filter((r) => r.status === 'Delivered' && r.finalCost != null).forEach((r) => {
+    if (!r.deliveredAt) return;
+    const m = r.deliveredAt.slice(0, 7);
+    if (monthlyMap[m]) {
+      monthlyMap[m].revenue += r.finalCost || 0;
+      const parts = allRepairParts.filter((rp) => rp.repairJobId === r.id);
+      monthlyMap[m].cogs += parts.reduce((sum, rp) => sum + (rp.costPrice || 0) * (rp.quantity || 0), 0);
+    }
+  });
+  allExpenses.forEach((e) => {
+    if (!e.date) return;
+    const m = e.date.slice(0, 7);
+    if (monthlyMap[m]) monthlyMap[m].expenses += e.amount || 0;
+  });
+  const monthly = last6.map((m) => ({ month: m, ...monthlyMap[m] }));
+
+  // --- Repair Stats ---
+  const problemCount = {};
+  allRepairs.forEach((r) => {
+    if (!r.problemDescription) return;
+    const key = r.problemDescription.slice(0, 60);
+    problemCount[key] = (problemCount[key] || 0) + 1;
+  });
+  const topProblems = Object.entries(problemCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([problem, count]) => ({ problem, count }));
+
+  const deliveredRepairs = allRepairs.filter((r) => r.status === 'Delivered' && r.finalCost != null);
+  const avgFinalCost =
+    deliveredRepairs.length > 0
+      ? deliveredRepairs.reduce((s, r) => s + (r.finalCost || 0), 0) / deliveredRepairs.length
+      : 0;
+
+  const withTimes = deliveredRepairs.filter((r) => r.receivedAt && r.deliveredAt);
+  const avgTurnaroundHours =
+    withTimes.length > 0
+      ? withTimes.reduce((s, r) => s + (new Date(r.deliveredAt) - new Date(r.receivedAt)) / 3600000, 0) / withTimes.length
+      : 0;
+
+  // --- Sales Stats ---
+  const productSales = {};
+  allSales.forEach((s) => {
+    if (!s.items) return;
+    s.items.forEach((item) => {
+      const key = item.productName;
+      if (!productSales[key]) productSales[key] = { qty: 0, revenue: 0 };
+      productSales[key].qty += item.quantity || 0;
+      productSales[key].revenue += (item.unitPrice || 0) * (item.quantity || 0);
+    });
+  });
+  const topProducts = Object.entries(productSales)
+    .sort((a, b) => b[1].qty - a[1].qty)
+    .slice(0, 5)
+    .map(([name, stats]) => ({ name, qty: stats.qty, revenue: stats.revenue }));
+
+  return {
+    revenue: { sales: salesRevenue, repairs: repairRevenue, total: totalRevenue },
+    cogs: { sales: salesCOGS, repairs: repairCOGS, total: totalCOGS },
+    grossProfit,
+    expenses: { total: expensesTotal, byCategory, log: filteredExpenses },
+    netProfit,
+    stockCashFlow,
+    charts: { daily, monthly },
+    repairStats: {
+      topProblems,
+      avgFinalCost: Math.round(avgFinalCost),
+      avgTurnaroundHours: Math.round(avgTurnaroundHours),
+    },
+    salesStats: { topProducts },
+  };
 }

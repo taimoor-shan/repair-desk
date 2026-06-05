@@ -21,6 +21,8 @@ import SaleForm from './pages/sales/SaleForm';
 import SaleDetail from './pages/sales/SaleDetail';
 import ProductList from './pages/inventory/ProductList';
 import ProductForm from './pages/inventory/ProductForm';
+import Purchases from './pages/inventory/Purchases';
+import Analytics from './pages/Analytics';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -160,6 +162,14 @@ function Layout() {
             }
           />
           <Route
+            path="/sales/:id/edit"
+            element={
+              <ProtectedRoute>
+                <SaleForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/inventory"
             element={
               <ProtectedRoute>
@@ -180,6 +190,22 @@ function Layout() {
             element={
               <ProtectedRoute>
                 <ProductForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inventory/purchases"
+            element={
+              <ProtectedRoute>
+                <Purchases />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <Analytics />
               </ProtectedRoute>
             }
           />

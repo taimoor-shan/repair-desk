@@ -4,6 +4,7 @@ import {
   getCustomer,
   getRepairJobsByCustomer,
   getSalesByCustomer,
+  getDevicesByCustomer,
 } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import StatusBadge from '../../components/StatusBadge';
@@ -14,14 +15,19 @@ export default function CustomerDetail() {
   const [customer, setCustomer] = useState(null);
   const [repairs, setRepairs] = useState([]);
   const [sales, setSales] = useState([]);
+  const [devices, setDevices] = useState([]);
+  const [deviceFilter, setDeviceFilter] = useState(null);
 
   useEffect(() => {
     getCustomer(id).then((c) => {
       if (!c) return navigate('/customers');
       setCustomer(c);
     });
-    getRepairJobsByCustomer(id).then(setRepairs);
+    getRepairJobsByCustomer(id).then((jobs) => {
+      setRepairs(jobs);
+    });
     getSalesByCustomer(id).then(setSales);
+    getDevicesByCustomer(id).then(setDevices);
   }, [id, navigate]);
 
   if (!customer) return null;
@@ -76,12 +82,80 @@ export default function CustomerDetail() {
         </div>
       </div>
 
+      {/* Devices */}
+      {devices.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">
+            Devices ({devices.length})
+          </h3>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left px-4 py-2 font-medium text-gray-600">
+                    Brand / Model
+                  </th>
+                  <th className="text-left px-4 py-2 font-medium text-gray-600">
+                    IMEI
+                  </th>
+                  <th className="text-left px-4 py-2 font-medium text-gray-600">
+                    Repairs
+                  </th>
+                  <th className="text-right px-4 py-2 font-medium text-gray-600" />
+                </tr>
+              </thead>
+              <tbody>
+                {devices.map((d) => {
+                  const deviceRepairCount = repairs.filter(
+                    (r) => r.deviceId === d.id
+                  ).length;
+                  return (
+                    <tr key={d.id} className="border-b border-gray-100">
+                      <td className="px-4 py-2 text-gray-900">
+                        {d.brand} {d.model}
+                      </td>
+                      <td className="px-4 py-2 text-gray-600">
+                        {d.imei || '—'}
+                      </td>
+                      <td className="px-4 py-2 text-gray-600">
+                        {deviceRepairCount} repair
+                        {deviceRepairCount !== 1 ? 's' : ''}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <button
+                          onClick={() =>
+                            setDeviceFilter(
+                              deviceFilter === d.id ? null : d.id
+                            )
+                          }
+                          className="text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          {deviceFilter === d.id ? 'Show all' : 'View'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Repair History */}
       <div className="mb-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-3">
           Repair History ({repairs.length})
+          {deviceFilter && (
+            <span className="text-sm text-gray-400 ml-2">
+              — filtered by device
+            </span>
+          )}
         </h3>
-        {repairs.length === 0 ? (
+        {(deviceFilter
+          ? repairs.filter((r) => r.deviceId === deviceFilter)
+          : repairs
+        ).length === 0 ? (
           <p className="text-sm text-gray-500">No repairs yet.</p>
         ) : (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
@@ -103,7 +177,10 @@ export default function CustomerDetail() {
                 </tr>
               </thead>
               <tbody>
-                {repairs.map((r) => (
+                {(deviceFilter
+                  ? repairs.filter((r) => r.deviceId === deviceFilter)
+                  : repairs
+                ).map((r) => (
                   <tr
                     key={r.id}
                     className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"

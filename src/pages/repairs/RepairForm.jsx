@@ -1,18 +1,22 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { addRepairJob } from '../../lib/api';
+import { useNavigate, Link } from 'react-router-dom';
+import { addRepairJob, addRepairParts, addDevice, updateDevice, getDeviceByIMEI, getCustomer, getProduct, updateProduct } from '../../lib/api';
 import { generateRepairNumber } from '../../lib/receiptNumber';
 import { useToast } from '../../context/ToastContext';
 import CustomerPicker from '../../components/CustomerPicker';
+import DevicePicker from '../../components/DevicePicker';
+import RepairPartsPicker from '../../components/RepairPartsPicker';
 
 const initial = {
   customerId: null,
   mobileBrand: '',
   mobileModel: '',
   imei: '',
+  color: '',
   problemDescription: '',
   repairNotes: '',
   estimatedCost: '',
+  laborCost: '',
 };
 
 export default function RepairForm() {
@@ -20,6 +24,9 @@ export default function RepairForm() {
   const addToast = useToast();
   const [form, setForm] = useState(initial);
   const [errors, setErrors] = useState({});
+  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [imeiWarning, setImeiWarning] = useState(null);
+  const [parts, setParts] = useState([]);
 
   function validate() {
     const e = {};
@@ -31,21 +38,95 @@ export default function RepairForm() {
     return Object.keys(e).length === 0;
   }
 
+  async function handleIMEIBlur() {
+    setImeiWarning(null);
+    const imei = form.imei.trim();
+    if (!imei) return;
+
+    const device = await getDeviceByIMEI(imei);
+    if (!device) return;
+
+    if (device.customerId === form.customerId) {
+      setSelectedDevice(device);
+      setForm((prev) => ({
+        ...prev,
+        mobileBrand: device.brand,
+        mobileModel: device.model,
+        imei: device.imei || prev.imei,
+        color: device.color || '',
+      }));
+    } else {
+      const other = await getCustomer(device.customerId);
+      setImeiWarning({
+        customerName: other?.name || 'another customer',
+        customerId: device.customerId,
+      });
+    }
+  }
+
   async function handleSubmit(ev) {
     ev.preventDefault();
     if (!validate()) return;
 
+    // Validate parts quantities against stock
+    for (const part of parts) {
+      const product = await getProduct(part.productId);
+      if (product && part.quantity > product.stock) {
+        setErrors((prev) => ({
+          ...prev,
+          [`part_qty_${part.productId}`]: `Only ${product.stock} in stock`,
+        }));
+        return;
+      }
+    }
+
+    // Upsert device
+    let deviceId = null;
+    if (selectedDevice) {
+      deviceId = selectedDevice.id;
+      if (selectedDevice.customerId !== form.customerId) {
+        await updateDevice(selectedDevice.id, { customerId: form.customerId });
+      }
+    } else if (form.mobileBrand.trim() || form.mobileModel.trim()) {
+      const newDevice = await addDevice({
+        customerId: form.customerId,
+        brand: form.mobileBrand.trim(),
+        model: form.mobileModel.trim(),
+        imei: form.imei.trim() || null,
+        color: form.color.trim() || null,
+      });
+      deviceId = newDevice.id;
+    }
+
+    const partsTotal = parts.reduce((s, p) => s + p.quantity * p.costPrice, 0);
+    const labor = Number(form.laborCost) || 0;
+    const estimatedCost = partsTotal + labor || Number(form.estimatedCost) || 0;
+
     const receiptNumber = await generateRepairNumber();
-    await addRepairJob({
+    const repairJobId = await addRepairJob({
       ...form,
       customerId: form.customerId ? Number(form.customerId) : null,
-      estimatedCost: Number(form.estimatedCost) || 0,
+      deviceId,
+      estimatedCost,
       finalCost: null,
       status: 'Pending',
       receivedAt: new Date().toISOString(),
       deliveredAt: null,
       receiptNumber,
     });
+
+    // Insert repair parts and decrement stock
+    if (parts.length > 0) {
+      await addRepairParts(repairJobId, parts);
+      for (const part of parts) {
+        const product = await getProduct(part.productId);
+        if (product) {
+          await updateProduct(part.productId, {
+            stock: product.stock - part.quantity,
+          });
+        }
+      }
+    }
 
     addToast('Repair job created');
     navigate('/repairs');
@@ -55,6 +136,10 @@ export default function RepairForm() {
     setForm((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
   }
+
+  const partsTotal = parts.reduce((s, p) => s + p.quantity * p.costPrice, 0);
+  const labor = Number(form.laborCost) || 0;
+  const estimatedTotal = partsTotal + labor;
 
   return (
     <div>
@@ -67,9 +152,40 @@ export default function RepairForm() {
             </label>
             <CustomerPicker
               value={form.customerId}
-              onChange={(id) => update('customerId', id)}
+              onChange={(id) => {
+                update('customerId', id);
+                setSelectedDevice(null);
+                setImeiWarning(null);
+              }}
             />
           </div>
+
+          {form.customerId && (
+            <DevicePicker
+              customerId={form.customerId}
+              selectedDevice={selectedDevice}
+              onDeviceSelect={(device) => {
+                setSelectedDevice(device);
+                if (device) {
+                  setForm((prev) => ({
+                    ...prev,
+                    mobileBrand: device.brand,
+                    mobileModel: device.model,
+                    imei: device.imei || '',
+                    color: device.color || '',
+                  }));
+                } else {
+                  setForm((prev) => ({
+                    ...prev,
+                    mobileBrand: '',
+                    mobileModel: '',
+                    imei: '',
+                    color: '',
+                  }));
+                }
+              }}
+            />
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -112,16 +228,44 @@ export default function RepairForm() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              IMEI
-            </label>
-            <input
-              type="text"
-              value={form.imei}
-              onChange={(e) => update('imei', e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                IMEI
+              </label>
+              <input
+                type="text"
+                value={form.imei}
+                onChange={(e) => {
+                  update('imei', e.target.value);
+                  setImeiWarning(null);
+                }}
+                onBlur={handleIMEIBlur}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {imeiWarning && (
+                <p className="mt-1 text-xs text-red-600">
+                  This IMEI is registered under {imeiWarning.customerName}.{' '}
+                  <Link
+                    to={`/customers/${imeiWarning.customerId}`}
+                    className="underline font-medium"
+                  >
+                    View record
+                  </Link>
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Color
+              </label>
+              <input
+                type="text"
+                value={form.color}
+                onChange={(e) => update('color', e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
 
           <div>
@@ -157,16 +301,42 @@ export default function RepairForm() {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Estimated Cost
-            </label>
-            <input
-              type="number"
-              value={form.estimatedCost}
-              onChange={(e) => update('estimatedCost', e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+          <RepairPartsPicker
+            parts={parts}
+            onAdd={(part) => setParts((prev) => [...prev, part])}
+            onUpdate={(productId, field, value) =>
+              setParts((prev) =>
+                prev.map((p) =>
+                  p.productId === productId ? { ...p, [field]: value } : p
+                )
+              )
+            }
+            onRemove={(productId) =>
+              setParts((prev) => prev.filter((p) => p.productId !== productId))
+            }
+          />
+
+          {/* Cost Summary */}
+          <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Parts Cost:</span>
+              <span className="font-medium">{partsTotal.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500">Labor / Other:</span>
+              <input
+                type="number"
+                value={form.laborCost}
+                onChange={(e) => update('laborCost', e.target.value)}
+                className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right"
+                placeholder="0"
+                min="0"
+              />
+            </div>
+            <div className="flex justify-between pt-2 border-t border-gray-200 font-semibold">
+              <span>Estimated Total:</span>
+              <span>{estimatedTotal.toLocaleString()}</span>
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">

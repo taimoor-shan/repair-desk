@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getRepairJob, updateRepairJob, getCustomer, getSettings } from '../../lib/api';
+import { getRepairJob, updateRepairJob, getRepairParts, getCustomer, getSettings } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -16,6 +16,7 @@ export default function RepairDetail() {
   const addToast = useToast();
   const confirm = useConfirm();
   const [repair, setRepair] = useState(null);
+  const [repairParts, setRepairParts] = useState([]);
   const [customer, setCustomer] = useState(null);
   const [shop, setShop] = useState(null);
   const [editingCost, setEditingCost] = useState(false);
@@ -31,6 +32,7 @@ export default function RepairDetail() {
         getCustomer(r.customerId).then(setCustomer);
       }
     });
+    getRepairParts(id).then(setRepairParts);
     getSettings().then(setShop);
   }, [id, navigate]);
 
@@ -84,7 +86,7 @@ export default function RepairDetail() {
       <PrintReceipt
         shop={shop}
         type="repair"
-        data={{ ...repair, _customer: customer }}
+        data={{ ...repair, _customer: customer, _parts: repairParts }}
       />
     );
 
@@ -275,6 +277,38 @@ export default function RepairDetail() {
             </div>
           )}
 
+          {/* Parts Used */}
+          {repairParts.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                Parts Used
+              </h3>
+              <div className="space-y-2 text-sm">
+                {repairParts.map((part) => (
+                  <div key={part.id} className="flex justify-between">
+                    <span className="text-gray-600">
+                      {part.productName} × {part.quantity}
+                    </span>
+                    <span className="font-medium text-gray-900">
+                      {formatCurrency((part.costPrice || 0) * part.quantity)}
+                    </span>
+                  </div>
+                ))}
+                <div className="flex justify-between pt-2 border-t border-gray-200 font-semibold text-gray-900">
+                  <span>Parts Cost</span>
+                  <span>
+                    {formatCurrency(
+                      repairParts.reduce(
+                        (s, p) => s + (p.costPrice || 0) * p.quantity,
+                        0
+                      )
+                    )}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Print Receipts */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -301,7 +335,7 @@ export default function RepairDetail() {
                 <div className="flex gap-2">
                   <WhatsAppButton
                     phone={customer?.phone}
-                    text={formatRepairReceiptText(shop, repair, customer)}
+                    text={formatRepairReceiptText(shop, repair, customer, repairParts)}
                     label="Initial"
                     variant="solid"
                     className="flex-1"
@@ -309,7 +343,7 @@ export default function RepairDetail() {
                   {repair.status === 'Delivered' && (
                     <WhatsAppButton
                       phone={customer?.phone}
-                      text={formatRepairReceiptText(shop, repair, customer)}
+                      text={formatRepairReceiptText(shop, repair, customer, repairParts)}
                       label="Final"
                       variant="outline"
                       className="flex-1"
@@ -328,7 +362,7 @@ export default function RepairDetail() {
           <PrintReceipt
             shop={shop}
             type="repair"
-            data={{ ...repair, _customer: customer }}
+            data={{ ...repair, _customer: customer, _parts: repairParts }}
           />
         </div>
       </div>

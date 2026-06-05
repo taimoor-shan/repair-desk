@@ -1,12 +1,21 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getProducts, deleteProduct, adjustStock } from '../../lib/api';
+import { getProducts, deleteProduct, adjustStock, addStockPurchase } from '../../lib/api';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { formatCurrency } from '../../lib/helpers';
 import EmptyState from '../../components/EmptyState';
 
 const categories = ['All', 'Mobile', 'Accessory', 'RepairPart'];
+const adjustReasons = ['Damaged', 'Stock Count', 'Other'];
+
+const emptyRestock = {
+  date: new Date().toISOString().slice(0, 10),
+  supplier: '',
+  quantity: 0,
+  unitCost: 0,
+  note: '',
+};
 
 export default function ProductList() {
   const [products, setProducts] = useState([]);
@@ -14,6 +23,9 @@ export default function ProductList() {
   const [category, setCategory] = useState('All');
   const [adjustModal, setAdjustModal] = useState(null);
   const [adjustAmount, setAdjustAmount] = useState(0);
+  const [adjustReason, setAdjustReason] = useState('');
+  const [restockModal, setRestockModal] = useState(null);
+  const [restockForm, setRestockForm] = useState(emptyRestock);
   const confirm = useConfirm();
   const addToast = useToast();
 
@@ -51,21 +63,59 @@ export default function ProductList() {
           : p
       )
     );
-    addToast('Stock adjusted');
+    addToast(`Stock adjusted — ${adjustReason}`);
     setAdjustModal(null);
     setAdjustAmount(0);
+    setAdjustReason('');
+  }
+
+  async function handleRestock() {
+    if (!restockModal || restockForm.quantity <= 0) return;
+    const product = restockModal;
+    const unitCost = Number(restockForm.unitCost) || product.costPrice || 0;
+    const totalCost = unitCost * restockForm.quantity;
+
+    await addStockPurchase({
+      productId: product.id,
+      productName: product.name,
+      quantity: restockForm.quantity,
+      unitCost,
+      totalCost,
+      supplier: restockForm.supplier || null,
+      note: restockForm.note || null,
+      date: restockForm.date,
+    });
+
+    setProducts((prev) =>
+      prev.map((p) =>
+        p.id === product.id
+          ? { ...p, stock: p.stock + restockForm.quantity }
+          : p
+      )
+    );
+    addToast(`${restockForm.quantity} units of "${product.name}" restocked`);
+    setRestockModal(null);
+    setRestockForm(emptyRestock);
   }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Inventory</h2>
-        <Link
-          to="/inventory/new"
-          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-        >
-          + Add Product
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            to="/inventory/purchases"
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Purchases
+          </Link>
+          <Link
+            to="/inventory/new"
+            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
+          >
+            + Add Product
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
@@ -168,12 +218,25 @@ export default function ProductList() {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => {
+                          setRestockModal(p);
+                          setRestockForm({
+                            ...emptyRestock,
+                            unitCost: p.costPrice || 0,
+                          });
+                        }}
+                        className="px-2 py-1 text-xs text-green-600 hover:bg-green-50 rounded"
+                      >
+                        Restock
+                      </button>
+                      <button
+                        onClick={() => {
                           setAdjustModal(p);
                           setAdjustAmount(0);
+                          setAdjustReason('');
                         }}
                         className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded"
                       >
-                        Stock
+                        Adjust
                       </button>
                       <Link
                         to={`/inventory/${p.id}/edit`}
@@ -196,7 +259,7 @@ export default function ProductList() {
         </div>
       )}
 
-      {/* Stock Adjustment Modal */}
+      {/* Stock Adjustment Modal (corrections only) */}
       {adjustModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
@@ -219,6 +282,23 @@ export default function ProductList() {
                 autoFocus
               />
             </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reason *
+              </label>
+              <select
+                value={adjustReason}
+                onChange={(e) => setAdjustReason(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Select reason...</option>
+                {adjustReasons.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
             {adjustAmount !== 0 && (
               <p className="mt-2 text-sm text-gray-500">
                 New stock: {Math.max(0, adjustModal.stock + Number(adjustAmount))}
@@ -229,6 +309,7 @@ export default function ProductList() {
                 onClick={() => {
                   setAdjustModal(null);
                   setAdjustAmount(0);
+                  setAdjustReason('');
                 }}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
               >
@@ -236,9 +317,127 @@ export default function ProductList() {
               </button>
               <button
                 onClick={handleAdjust}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                disabled={!adjustReason || adjustAmount === 0}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 Adjust
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restock Modal (incoming from supplier) */}
+      {restockModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Restock — {restockModal.name}
+            </h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Current stock: {restockModal.stock}
+            </p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={restockForm.date}
+                  onChange={(e) =>
+                    setRestockForm({ ...restockForm, date: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Supplier (optional)
+                </label>
+                <input
+                  type="text"
+                  value={restockForm.supplier}
+                  onChange={(e) =>
+                    setRestockForm({ ...restockForm, supplier: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  placeholder="e.g. Ali Parts"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Quantity *
+                </label>
+                <input
+                  type="number"
+                  value={restockForm.quantity}
+                  onChange={(e) =>
+                    setRestockForm({
+                      ...restockForm,
+                      quantity: Number(e.target.value),
+                    })
+                  }
+                  min="1"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Unit Cost
+                </label>
+                <input
+                  type="number"
+                  value={restockForm.unitCost}
+                  onChange={(e) =>
+                    setRestockForm({
+                      ...restockForm,
+                      unitCost: Number(e.target.value),
+                    })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Note (optional)
+                </label>
+                <input
+                  type="text"
+                  value={restockForm.note}
+                  onChange={(e) =>
+                    setRestockForm({ ...restockForm, note: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              {restockForm.quantity > 0 && (
+                <p className="text-sm text-gray-500">
+                  Total cost:{' '}
+                  {(
+                    restockForm.quantity *
+                    (Number(restockForm.unitCost) || restockModal.costPrice || 0)
+                  ).toLocaleString()}
+                </p>
+              )}
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setRestockModal(null);
+                  setRestockForm(emptyRestock);
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRestock}
+                disabled={restockForm.quantity <= 0}
+                className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
+                Restock
               </button>
             </div>
           </div>

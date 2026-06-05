@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getSale, getCustomer, getSettings } from '../../lib/api';
+import { getSale, getCustomer, getSettings, deleteSale } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
+import { useConfirm } from '../../context/ConfirmContext';
+import { useToast } from '../../context/ToastContext';
 import PrintReceipt from '../../components/PrintReceipt';
 import WhatsAppButton from '../../components/WhatsAppButton';
 import { formatSaleReceiptText } from '../../lib/whatsapp';
@@ -13,6 +15,20 @@ export default function SaleDetail() {
   const [sale, setSale] = useState(null);
   const [customer, setCustomer] = useState(null);
   const [shop, setShop] = useState(null);
+  const confirm = useConfirm();
+  const addToast = useToast();
+
+  async function handleDelete() {
+    const itemsDesc = sale?.items?.map((i) => `${i.quantity}× ${i.productName}`).join(', ') || 'no items';
+    const ok = await confirm(
+      'Delete Sale',
+      `Delete ${sale.receiptNumber}?\n\nItems: ${itemsDesc}\nTotal: ${formatCurrency((sale.totalAmount || 0) - (sale.discount || 0))}\n\nStock will be returned to inventory.`
+    );
+    if (!ok) return;
+    await deleteSale(sale.id);
+    addToast('Sale deleted, stock restored');
+    navigate('/sales');
+  }
 
   useEffect(() => {
     getSale(id).then((s) => {
@@ -71,6 +87,18 @@ export default function SaleDetail() {
           </h2>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            to={`/sales/${sale.id}/edit`}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Edit
+          </Link>
+          <button
+            onClick={handleDelete}
+            className="px-4 py-2 text-sm font-medium text-red-600 bg-white border border-red-300 rounded-lg hover:bg-red-50"
+          >
+            Delete
+          </button>
           <button
             onClick={handlePrint}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"

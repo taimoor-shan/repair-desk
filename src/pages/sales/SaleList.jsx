@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getSales, getCustomer } from '../../lib/api';
+import { getSales, getCustomer, deleteSale } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
+import { useConfirm } from '../../context/ConfirmContext';
+import { useToast } from '../../context/ToastContext';
 import EmptyState from '../../components/EmptyState';
 
 export default function SaleList() {
   const navigate = useNavigate();
   const [sales, setSales] = useState([]);
   const [customers, setCustomers] = useState({});
+  const confirm = useConfirm();
+  const addToast = useToast();
 
   useEffect(() => {
     getSales().then((s) => {
@@ -24,6 +28,19 @@ export default function SaleList() {
       });
     });
   }, []);
+
+  async function handleDelete(sale, e) {
+    e.stopPropagation();
+    const itemsDesc = sale.items?.map((i) => `${i.quantity}× ${i.productName}`).join(', ') || 'no items';
+    const ok = await confirm(
+      'Delete Sale',
+      `Delete ${sale.receiptNumber}?\n\nItems: ${itemsDesc}\nTotal: ${formatCurrency(sale.totalAmount - (sale.discount || 0))}\n\nStock will be returned to inventory.`
+    );
+    if (!ok) return;
+    await deleteSale(sale.id);
+    setSales((prev) => prev.filter((s) => s.id !== sale.id));
+    addToast('Sale deleted, stock restored');
+  }
 
   return (
     <div>
@@ -73,6 +90,7 @@ export default function SaleList() {
                 <th className="text-right px-4 py-3 font-medium text-gray-600">
                   Total
                 </th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600" />
               </tr>
             </thead>
             <tbody>
@@ -101,6 +119,14 @@ export default function SaleList() {
                     </td>
                     <td className="px-4 py-3 text-right font-medium">
                       {formatCurrency(s.totalAmount - (s.discount || 0))}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={(e) => handleDelete(s, e)}
+                        className="px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 );

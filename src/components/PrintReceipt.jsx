@@ -131,6 +131,34 @@ export default function PrintReceipt({ shop, type, data }) {
           </table>
         )}
 
+        {/* Parts used (repair only) */}
+        {isRepair && data._parts && data._parts.length > 0 && (
+          <>
+            <div style={s.divider} />
+            <div style={{ marginBottom: '8px' }}>
+              <p style={{ fontWeight: 'bold', fontSize: '11px', marginBottom: '4px' }}>
+                Parts Used:
+              </p>
+              {data._parts.map((part) => (
+                <div key={part.id} style={s.row}>
+                  <span style={{ fontSize: '11px' }}>
+                    {part.productName} × {part.quantity}
+                  </span>
+                  <span style={{ fontSize: '11px' }}>
+                    {formatCurrency((part.costPrice || 0) * part.quantity)}
+                  </span>
+                </div>
+              ))}
+              <div style={{ ...s.row, fontWeight: 'bold', borderTop: '1px solid #ddd', paddingTop: '2px', marginTop: '2px' }}>
+                <span style={{ fontSize: '11px' }}>Parts Total:</span>
+                <span style={{ fontSize: '11px' }}>
+                  {formatCurrency(data._parts.reduce((s, p) => s + (p.costPrice || 0) * p.quantity, 0))}
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+
         {/* Totals */}
         <div style={s.divider} />
         <div style={{ paddingTop: '4px' }}>
@@ -164,10 +192,6 @@ export default function PrintReceipt({ shop, type, data }) {
                 <span>Total</span>
                 <span>{formatCurrency(data.totalAmount - (data.discount || 0))}</span>
               </div>
-              <div style={s.row}>
-                <span style={s.label}>Payment</span>
-                <span>{data.paymentMethod}</span>
-              </div>
             </>
           )}
         </div>
@@ -176,6 +200,20 @@ export default function PrintReceipt({ shop, type, data }) {
         <div style={s.footer}>
           <p style={{ margin: '0 0 2px' }}>Thank you for your business!</p>
           <p style={{ margin: 0 }}>{new Date().toLocaleString()}</p>
+        </div>
+
+        {/* Terms & Conditions */}
+        <div style={{ ...s.footer, fontSize: '9px', color: '#555', textAlign: 'left', lineHeight: '1.4' }}>
+          <p style={{ fontWeight: 'bold', margin: '0 0 4px', textAlign: 'center' }}>TERMS AND CONDITIONS</p>
+          <ol style={{ margin: 0, paddingLeft: '14px' }}>
+            <li>All phones to be tested and paid for at collection</li>
+            <li>We are not responsible for the loss of ANY data</li>
+            <li>It is the owner's responsibility to remove SIM and memory cards; we are not responsible for loss or damage</li>
+            <li>No warranty provided on LCDs or Touch if it has marks, scratches or cracks</li>
+            <li>We will only repair the fault booked in for</li>
+            <li>Devices to be collected within 90 days of booking. Devices left longer than 90 days will become property of Sigma Mobiles to recover costs</li>
+            <li>Please ask us for our T&Cs</li>
+          </ol>
         </div>
 
       </div>
