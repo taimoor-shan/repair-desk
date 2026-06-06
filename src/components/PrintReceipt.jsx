@@ -15,8 +15,10 @@ const printStyles = `
 export default function PrintReceipt({ shop, type, data }) {
   if (!data) return null;
 
-  const isRepair = type === 'repair';
+  const isRepair = type === 'repair' || type === 'initial' || type === 'final';
   const isSale = type === 'sale';
+  const isInitial = type === 'repair' || type === 'initial';
+  const isFinal = type === 'final';
 
   const s = {
     wrap: {
@@ -162,12 +164,20 @@ export default function PrintReceipt({ shop, type, data }) {
         {/* Totals */}
         <div style={s.divider} />
         <div style={{ paddingTop: '4px' }}>
-          {isRepair && (
+          {isRepair && isFinal && (
             <>
-              <div style={s.row}>
-                <span style={s.label}>Estimated Cost</span>
-                <span>{formatCurrency(data.estimatedCost)}</span>
-              </div>
+              {data.laborCost > 0 && (
+                <div style={s.row}>
+                  <span style={s.label}>Labor</span>
+                  <span>{formatCurrency(data.laborCost)}</span>
+                </div>
+              )}
+              {data.extraCost > 0 && (
+                <div style={s.row}>
+                  <span style={s.label}>{data.extraCostLabel || 'Extra Cost'}</span>
+                  <span>{formatCurrency(data.extraCost)}</span>
+                </div>
+              )}
               {data.finalCost != null && (
                 <div style={s.totalRow}>
                   <span>Final Cost</span>

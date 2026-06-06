@@ -22,7 +22,7 @@ export function buildWhatsAppUrl(phone, text) {
   return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 }
 
-export function formatRepairReceiptText(shop, repair, customer, parts) {
+export function formatRepairReceiptText(shop, repair, customer, parts, receiptType = 'initial') {
   const lines = [
     `*${shop?.shopName || 'Repair Desk'}*`,
     shop?.shopAddress,
@@ -40,9 +40,6 @@ export function formatRepairReceiptText(shop, repair, customer, parts) {
     repair.imei && `IMEI: ${repair.imei}`,
     `Problem: ${repair.problemDescription}`,
     `Status: ${repair.status}`,
-    '',
-    `Estimated Cost: ${formatCurrency(repair.estimatedCost)}`,
-    repair.finalCost != null && `Final Cost: ${formatCurrency(repair.finalCost)}`,
   ];
 
   if (parts && parts.length > 0) {
@@ -53,6 +50,19 @@ export function formatRepairReceiptText(shop, repair, customer, parts) {
     });
     const partsTotal = parts.reduce((s, p) => s + (p.costPrice || 0) * p.quantity, 0);
     lines.push(`Parts Total: ${formatCurrency(partsTotal)}`);
+  }
+
+  if (receiptType === 'final' && repair.finalCost != null) {
+    lines.push('');
+    lines.push('--- COST BREAKDOWN ---');
+    if (repair.laborCost > 0) {
+      lines.push(`Labor: ${formatCurrency(repair.laborCost)}`);
+    }
+    if (repair.extraCost > 0) {
+      const label = repair.extraCostLabel || 'Extra Cost';
+      lines.push(`${label}: ${formatCurrency(repair.extraCost)}`);
+    }
+    lines.push(`*Final Cost: ${formatCurrency(repair.finalCost)}*`);
   }
 
   lines.push('');

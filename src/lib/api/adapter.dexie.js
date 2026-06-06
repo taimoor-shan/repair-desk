@@ -113,6 +113,38 @@ export async function getRepairJobsByCustomer(customerId) {
     .sortBy('receivedAt');
 }
 
+export async function searchRepairJobs(query) {
+  const q = query.toLowerCase();
+  const allRepairs = await db.repairJobs.orderBy('receivedAt').reverse().toArray();
+  const allCustomers = await db.customers.toArray();
+  const customerMap = Object.fromEntries(allCustomers.map(c => [c.id, c]));
+
+  return allRepairs.filter(r => {
+    const cust = customerMap[r.customerId];
+    return (
+      (r.receiptNumber || '').toLowerCase().includes(q) ||
+      (r.mobileBrand || '').toLowerCase().includes(q) ||
+      (r.mobileModel || '').toLowerCase().includes(q) ||
+      (r.imei || '').toLowerCase().includes(q) ||
+      (r.problemDescription || '').toLowerCase().includes(q) ||
+      (cust?.name || '').toLowerCase().includes(q) ||
+      (cust?.phone || '').toLowerCase().includes(q)
+    );
+  });
+}
+
+export async function getRepairJobsInRange(startDate, endDate) {
+  const results = await db.repairJobs
+    .filter(r => {
+      const d = (r.receivedAt || '').slice(0, 10);
+      return d >= startDate && d <= endDate;
+    })
+    .toArray();
+  return results.sort((a, b) =>
+    (b.receivedAt || '').localeCompare(a.receivedAt || '')
+  );
+}
+
 // --- Sales ---
 
 export async function getSales() {
@@ -152,6 +184,34 @@ export async function getSalesByCustomer(customerId) {
     .equals(Number(customerId))
     .reverse()
     .sortBy('createdAt');
+}
+
+export async function searchSales(query) {
+  const q = query.toLowerCase();
+  const allSales = await db.sales.orderBy('createdAt').reverse().toArray();
+  const allCustomers = await db.customers.toArray();
+  const customerMap = Object.fromEntries(allCustomers.map(c => [c.id, c]));
+
+  return allSales.filter(s => {
+    const cust = customerMap[s.customerId];
+    return (
+      (s.receiptNumber || '').toLowerCase().includes(q) ||
+      (cust?.name || '').toLowerCase().includes(q) ||
+      (cust?.phone || '').toLowerCase().includes(q)
+    );
+  });
+}
+
+export async function getSalesInRange(startDate, endDate) {
+  const results = await db.sales
+    .filter(s => {
+      const d = (s.createdAt || '').slice(0, 10);
+      return d >= startDate && d <= endDate;
+    })
+    .toArray();
+  return results.sort((a, b) =>
+    (b.createdAt || '').localeCompare(a.createdAt || '')
+  );
 }
 
 // --- Settings ---
@@ -306,6 +366,22 @@ export async function addRepairParts(repairJobId, parts) {
     quantity: p.quantity,
   }));
   return db.repairParts.bulkAdd(rows);
+}
+
+export async function deleteRepairParts(repairJobId) {
+  return db.repairParts.where('repairJobId').equals(Number(repairJobId)).delete();
+}
+
+export async function restoreRepairPartsStock(repairJobId) {
+  const parts = await getRepairParts(repairJobId);
+  for (const part of parts) {
+    const product = await db.products.get(Number(part.productId));
+    if (product) {
+      await db.products.update(Number(part.productId), {
+        stock: (product.stock || 0) + part.quantity,
+      });
+    }
+  }
 }
 
 // ============================================================

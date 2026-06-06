@@ -63,9 +63,14 @@ function toRepairJob(row) {
     mobileBrand: row.mobile_brand,
     mobileModel: row.mobile_model,
     imei: row.imei,
+    color: row.color || '',
+    phonePassword: row.phone_password || '',
     problemDescription: row.problem_description,
     repairNotes: row.repair_notes,
     estimatedCost: row.estimated_cost != null ? Number(row.estimated_cost) : null,
+    laborCost: row.labor_cost != null ? Number(row.labor_cost) : null,
+    extraCost: row.extra_cost != null ? Number(row.extra_cost) : null,
+    extraCostLabel: row.extra_cost_label || '',
     finalCost: row.final_cost != null ? Number(row.final_cost) : null,
     status: row.status,
     receiptNumber: row.receipt_number,
@@ -81,9 +86,14 @@ function fromRepairJob(obj) {
     mobile_brand: obj.mobileBrand,
     mobile_model: obj.mobileModel,
     imei: obj.imei,
+    color: obj.color || '',
+    phone_password: obj.phonePassword || '',
     problem_description: obj.problemDescription,
     repair_notes: obj.repairNotes,
     estimated_cost: obj.estimatedCost,
+    labor_cost: obj.laborCost,
+    extra_cost: obj.extraCost,
+    extra_cost_label: obj.extraCostLabel || '',
     final_cost: obj.finalCost,
     status: obj.status,
     receipt_number: obj.receiptNumber,
@@ -416,6 +426,45 @@ export async function getRepairJobsByCustomer(customerId) {
   return data.map(toRepairJob);
 }
 
+export async function searchRepairJobs(query) {
+  const q = `%${query}%`;
+
+  const { data: byFields, error: e1 } = await supabase
+    .from('repair_jobs')
+    .select('*')
+    .or(`receipt_number.ilike.${q},mobile_brand.ilike.${q},mobile_model.ilike.${q},imei.ilike.${q},problem_description.ilike.${q}`)
+    .order('received_at', { ascending: false });
+  if (e1) throw new Error(e1.message);
+
+  const { data: byCustomer, error: e2 } = await supabase
+    .from('repair_jobs')
+    .select('*, customers!inner(name, phone)')
+    .or(`customers.name.ilike.${q},customers.phone.ilike.${q}`)
+    .order('received_at', { ascending: false });
+  if (e2) throw new Error(e2.message);
+
+  const seen = new Set();
+  const merged = [...(byFields || []), ...(byCustomer || [])].filter(r => {
+    if (seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  });
+
+  return merged.map(toRepairJob);
+}
+
+export async function getRepairJobsInRange(startDate, endDate) {
+  const end = endDate.slice(0, 10) + 'T23:59:59.999Z';
+  const { data, error } = await supabase
+    .from('repair_jobs')
+    .select('*')
+    .gte('received_at', startDate)
+    .lte('received_at', end)
+    .order('received_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data.map(toRepairJob);
+}
+
 // ─── Sales ─────────────────────────────────────────────────────────
 
 export async function getSales() {
@@ -490,6 +539,45 @@ export async function getSalesByCustomer(customerId) {
     .from('sales')
     .select('*')
     .eq('customer_id', customerId)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(error.message);
+  return data.map(toSale);
+}
+
+export async function searchSales(query) {
+  const q = `%${query}%`;
+
+  const { data: byFields, error: e1 } = await supabase
+    .from('sales')
+    .select('*')
+    .or(`receipt_number.ilike.${q}`)
+    .order('created_at', { ascending: false });
+  if (e1) throw new Error(e1.message);
+
+  const { data: byCustomer, error: e2 } = await supabase
+    .from('sales')
+    .select('*, customers!inner(name, phone)')
+    .or(`customers.name.ilike.${q},customers.phone.ilike.${q}`)
+    .order('created_at', { ascending: false });
+  if (e2) throw new Error(e2.message);
+
+  const seen = new Set();
+  const merged = [...(byFields || []), ...(byCustomer || [])].filter(s => {
+    if (seen.has(s.id)) return false;
+    seen.add(s.id);
+    return true;
+  });
+
+  return merged.map(toSale);
+}
+
+export async function getSalesInRange(startDate, endDate) {
+  const end = endDate.slice(0, 10) + 'T23:59:59.999Z';
+  const { data, error } = await supabase
+    .from('sales')
+    .select('*')
+    .gte('created_at', startDate)
+    .lte('created_at', end)
     .order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
   return data.map(toSale);
@@ -642,6 +730,28 @@ export async function addRepairParts(repairJobId, parts) {
   }));
   const { error } = await supabase.from('repair_parts').insert(rows);
   if (error) throw new Error(error.message);
+}
+
+export async function deleteRepairParts(repairJobId) {
+  const { error } = await supabase
+    .from('repair_parts')
+    .delete()
+    .eq('repair_job_id', repairJobId);
+  if (error) throw new Error(error.message);
+}
+
+export async function restoreRepairPartsStock(repairJobId) {
+  const { data: parts } = await supabase
+    .from('repair_parts')
+    .select('*')
+    .eq('repair_job_id', repairJobId);
+  if (!parts) return;
+  for (const part of parts) {
+    await supabase.rpc('increment_stock', {
+      product_id: part.product_id,
+      amount: part.quantity,
+    });
+  }
 }
 
 // ============================================================

@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getRepairJob, updateRepairJob, getRepairParts, getCustomer, getSettings } from '../../lib/api';
+import { getRepairJob, updateRepairJob, getRepairParts, addRepairParts, deleteRepairParts, restoreRepairPartsStock, getCustomer, getSettings, getProduct, updateProduct } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import StatusBadge from '../../components/StatusBadge';
+import RepairPartsPicker from '../../components/RepairPartsPicker';
 import PrintReceipt from '../../components/PrintReceipt';
 import WhatsAppButton from '../../components/WhatsAppButton';
 import { formatRepairReceiptText } from '../../lib/whatsapp';
@@ -19,15 +20,22 @@ export default function RepairDetail() {
   const [repairParts, setRepairParts] = useState([]);
   const [customer, setCustomer] = useState(null);
   const [shop, setShop] = useState(null);
-  const [editingCost, setEditingCost] = useState(false);
-  const [finalCost, setFinalCost] = useState('');
-  const printRef = useRef(null);
+  const [laborCost, setLaborCost] = useState('');
+  const [extraCost, setExtraCost] = useState('');
+  const [extraCostLabel, setExtraCostLabel] = useState('Extra Cost');
+  const [editingParts, setEditingParts] = useState(false);
+  const [tempParts, setTempParts] = useState([]);
+
+  const partsTotal = repairParts.reduce((s, p) => s + (p.costPrice || 0) * p.quantity, 0);
+  const finalCost = (Number(laborCost) || 0) + partsTotal + (Number(extraCost) || 0);
 
   useEffect(() => {
     getRepairJob(id).then((r) => {
       if (!r) return navigate('/repairs');
       setRepair(r);
-      setFinalCost(r.finalCost != null ? String(r.finalCost) : '');
+      setLaborCost(r.laborCost != null ? String(r.laborCost) : '');
+      setExtraCost(r.extraCost != null ? String(r.extraCost) : '');
+      setExtraCostLabel(r.extraCostLabel || 'Extra Cost');
       if (r.customerId) {
         getCustomer(r.customerId).then(setCustomer);
       }
@@ -40,6 +48,12 @@ export default function RepairDetail() {
     const updates = { status };
     if (status === 'Delivered') {
       updates.deliveredAt = new Date().toISOString();
+      const labor = Number(laborCost) || 0;
+      const extra = Number(extraCost) || 0;
+      updates.laborCost = labor;
+      updates.extraCost = extra;
+      updates.extraCostLabel = extraCostLabel;
+      updates.finalCost = labor + partsTotal + extra;
     }
     await updateRepairJob(id, updates);
     setRepair((prev) => ({ ...prev, ...updates }));
@@ -61,12 +75,13 @@ export default function RepairDetail() {
     updateStatus(status);
   }
 
-  async function saveFinalCost() {
-    const cost = Number(finalCost) || 0;
-    await updateRepairJob(id, { finalCost: cost });
-    setRepair((prev) => ({ ...prev, finalCost: cost }));
-    setEditingCost(false);
-    addToast('Final cost updated');
+  async function saveLaborExtra() {
+    const labor = Number(laborCost) || 0;
+    const extra = Number(extraCost) || 0;
+    const total = labor + partsTotal + extra;
+    await updateRepairJob(id, { laborCost: labor, extraCost: extra, extraCostLabel, finalCost: total });
+    setRepair((prev) => ({ ...prev, laborCost: labor, extraCost: extra, extraCostLabel, finalCost: total }));
+    addToast('Costs updated');
   }
 
   function printReceipt(type) {
@@ -85,7 +100,7 @@ export default function RepairDetail() {
     root.render(
       <PrintReceipt
         shop={shop}
-        type="repair"
+        type={type}
         data={{ ...repair, _customer: customer, _parts: repairParts }}
       />
     );
@@ -93,6 +108,56 @@ export default function RepairDetail() {
     setTimeout(() => {
       win.print();
     }, 300);
+  }
+
+  async function saveParts() {
+    const id = Number(repair.id);
+
+    // 1. Load current parts
+    const currentParts = await getRepairParts(id);
+
+    // 2. Restore stock for all current parts
+    await restoreRepairPartsStock(id);
+
+    // 3. Re-fetch stock from DB and validate new parts
+    for (const part of tempParts) {
+      const product = await getProduct(part.productId);
+      if (product && part.quantity > (product.stock || 0)) {
+        addToast(`Not enough stock for ${part.productName} (${product.stock} available)`, 'error');
+        return;
+      }
+    }
+
+    // 4. Delete current parts
+    await deleteRepairParts(id);
+
+    // 5. Insert new parts
+    if (tempParts.length > 0) {
+      await addRepairParts(id, tempParts);
+    }
+
+    // 6. Decrement stock for new parts
+    for (const part of tempParts) {
+      const product = await getProduct(part.productId);
+      if (product) {
+        await updateProduct(part.productId, {
+          stock: (product.stock || 0) - part.quantity,
+        });
+      }
+    }
+
+    // 7. Refresh, update final cost, and exit editing
+    const updatedParts = await getRepairParts(id);
+    setRepairParts(updatedParts);
+    const newPartsTotal = updatedParts.reduce((s, p) => s + (p.costPrice || 0) * p.quantity, 0);
+    const labor = Number(laborCost) || 0;
+    const extra = Number(extraCost) || 0;
+    const total = labor + newPartsTotal + extra;
+    await updateRepairJob(id, { finalCost: total });
+    setRepair((prev) => ({ ...prev, finalCost: total }));
+    setEditingParts(false);
+    setTempParts([]);
+    addToast('Parts updated');
   }
 
   if (!repair) return null;
@@ -166,6 +231,12 @@ export default function RepairDetail() {
                 <dd className="font-medium">{repair.imei}</dd>
               </div>
             )}
+            {repair.phonePassword && (
+              <div className="flex justify-between">
+                <dt className="text-gray-500">Phone Password</dt>
+                <dd className="font-medium">{repair.phonePassword}</dd>
+              </div>
+            )}
             <div className="flex justify-between">
               <dt className="text-gray-500">Received</dt>
               <dd>{formatDate(repair.receivedAt)}</dd>
@@ -196,62 +267,73 @@ export default function RepairDetail() {
             </div>
           )}
 
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <div className="flex justify-between items-center">
-              <dt className="text-gray-500 text-sm">Estimated Cost</dt>
-              <dd className="font-medium">
-                {formatCurrency(repair.estimatedCost)}
-              </dd>
-            </div>
+          {repair.status !== 'Pending' && (
+            <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+              <div className="flex justify-between items-center">
+                <dt className="text-gray-500 text-sm">Labor</dt>
+                {repair.status !== 'Delivered' ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={laborCost}
+                      onChange={(e) => setLaborCost(e.target.value)}
+                      className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right"
+                      placeholder="0"
+                      min="0"
+                    />
+                    <button
+                      onClick={saveLaborExtra}
+                      className="text-xs text-blue-600 font-medium"
+                    >
+                      Save
+                    </button>
+                  </div>
+                ) : (
+                  <dd className="font-medium">{formatCurrency(repair.laborCost || 0)}</dd>
+                )}
+              </div>
 
-            <div className="flex justify-between items-center mt-3">
-              <dt className="text-gray-500 text-sm">Final Cost</dt>
-              {editingCost ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={finalCost}
-                    onChange={(e) => setFinalCost(e.target.value)}
-                    className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right"
-                    autoFocus
-                  />
-                  <button
-                    onClick={saveFinalCost}
-                    className="text-xs text-blue-600 font-medium"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => {
-                      setEditingCost(false);
-                      setFinalCost(
-                        repair.finalCost != null
-                          ? String(repair.finalCost)
-                          : ''
-                      );
-                    }}
-                    className="text-xs text-gray-500"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : repair.finalCost != null ? (
-                <dd
-                  className="font-bold text-green-700 cursor-pointer hover:underline"
-                  onClick={() => setEditingCost(true)}
-                >
-                  {formatCurrency(repair.finalCost)}
+              <div className="flex justify-between items-center">
+                {repair.status !== 'Delivered' ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={extraCostLabel}
+                      onChange={(e) => setExtraCostLabel(e.target.value)}
+                      className="w-24 border border-gray-300 rounded px-2 py-1 text-sm text-gray-500"
+                      placeholder="Extra Cost"
+                    />
+                    <input
+                      type="number"
+                      value={extraCost}
+                      onChange={(e) => setExtraCost(e.target.value)}
+                      className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right"
+                      placeholder="0"
+                      min="0"
+                    />
+                    <button
+                      onClick={saveLaborExtra}
+                      className="text-xs text-blue-600 font-medium"
+                    >
+                      Save
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <dt className="text-gray-500 text-sm">{repair.extraCostLabel || 'Extra Cost'}</dt>
+                    <dd className="font-medium">{formatCurrency(repair.extraCost || 0)}</dd>
+                  </>
+                )}
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                <dt className="text-sm font-semibold text-gray-900">Final Cost</dt>
+                <dd className="font-bold text-green-700 text-base">
+                  {formatCurrency(finalCost)}
                 </dd>
-              ) : (
-                <button
-                  onClick={() => setEditingCost(true)}
-                  className="px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700"
-                >
-                  + Set Final Cost
-                </button>
-              )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Actions */}
@@ -278,36 +360,96 @@ export default function RepairDetail() {
           )}
 
           {/* Parts Used */}
-          {repairParts.length > 0 && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                Parts Used
-              </h3>
-              <div className="space-y-2 text-sm">
-                {repairParts.map((part) => (
-                  <div key={part.id} className="flex justify-between">
-                    <span className="text-gray-600">
-                      {part.productName} × {part.quantity}
-                    </span>
-                    <span className="font-medium text-gray-900">
-                      {formatCurrency((part.costPrice || 0) * part.quantity)}
-                    </span>
-                  </div>
-                ))}
-                <div className="flex justify-between pt-2 border-t border-gray-200 font-semibold text-gray-900">
-                  <span>Parts Cost</span>
-                  <span>
-                    {formatCurrency(
-                      repairParts.reduce(
-                        (s, p) => s + (p.costPrice || 0) * p.quantity,
-                        0
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Parts Used
+            </h3>
+
+            {repair.status === 'Pending' && repairParts.length === 0 && !editingParts && (
+              <p className="text-sm text-gray-400 italic">Start repair to add parts.</p>
+            )}
+
+            {editingParts ? (
+              <div>
+                <RepairPartsPicker
+                  parts={tempParts}
+                  onAdd={(part) => setTempParts((prev) => [...prev, part])}
+                  onUpdate={(productId, field, value) =>
+                    setTempParts((prev) =>
+                      prev.map((p) =>
+                        p.productId === productId ? { ...p, [field]: value } : p
                       )
-                    )}
-                  </span>
+                    )
+                  }
+                  onRemove={(productId) =>
+                    setTempParts((prev) => prev.filter((p) => p.productId !== productId))
+                  }
+                />
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={saveParts}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                  >
+                    Save Parts
+                  </button>
+                  <button
+                    onClick={() => { setEditingParts(false); setTempParts([]); }}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
-            </div>
-          )}
+            ) : (
+              <>
+                {repairParts.length > 0 ? (
+                  <div className="space-y-2 text-sm">
+                    {repairParts.map((part) => (
+                      <div key={part.id} className="flex justify-between">
+                        <span className="text-gray-600">
+                          {part.productName} × {part.quantity}
+                        </span>
+                        <span className="font-medium text-gray-900">
+                          {formatCurrency((part.costPrice || 0) * part.quantity)}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-2 border-t border-gray-200 font-semibold text-gray-900">
+                      <span>Parts Cost</span>
+                      <span>
+                        {formatCurrency(
+                          repairParts.reduce(
+                            (s, p) => s + (p.costPrice || 0) * p.quantity,
+                            0
+                          )
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  repair.status !== 'Pending' && (
+                    <p className="text-sm text-gray-400 italic">No parts added yet.</p>
+                  )
+                )}
+
+                {repair.status !== 'Delivered' && repair.status !== 'Pending' && (
+                  <button
+                    onClick={() => {
+                      setTempParts([...repairParts]);
+                      setEditingParts(true);
+                    }}
+                    className="mt-3 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100"
+                  >
+                    {repairParts.length > 0 ? 'Edit Parts' : 'Add Parts'}
+                  </button>
+                )}
+
+                {repair.status === 'Pending' && (
+                  <p className="mt-2 text-xs text-gray-400">Parts can be added after starting the repair.</p>
+                )}
+              </>
+            )}
+          </div>
 
           {/* Print Receipts */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -315,12 +457,14 @@ export default function RepairDetail() {
               Receipts
             </h3>
             <div className="space-y-2">
-              <button
-                onClick={() => printReceipt('initial')}
-                className="w-full px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-              >
-                Print Initial Receipt (Job Received)
-              </button>
+              {repair.status === 'Pending' && (
+                <button
+                  onClick={() => printReceipt('initial')}
+                  className="w-full px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  Print Initial Receipt (Job Received)
+                </button>
+              )}
               {repair.status === 'Delivered' && (
                 <button
                   onClick={() => printReceipt('final')}
@@ -330,42 +474,36 @@ export default function RepairDetail() {
                 </button>
               )}
 
-              <div className="border-t border-gray-100 pt-3 mt-3">
-                <p className="text-xs text-gray-400 mb-2">Share via WhatsApp</p>
-                <div className="flex gap-2">
-                  <WhatsAppButton
-                    phone={customer?.phone}
-                    text={formatRepairReceiptText(shop, repair, customer, repairParts)}
-                    label="Initial"
-                    variant="solid"
-                    className="flex-1"
-                  />
-                  {repair.status === 'Delivered' && (
-                    <WhatsAppButton
-                      phone={customer?.phone}
-                      text={formatRepairReceiptText(shop, repair, customer, repairParts)}
-                      label="Final"
-                      variant="outline"
-                      className="flex-1"
-                    />
-                  )}
+              {(repair.status === 'Pending' || repair.status === 'Delivered') && (
+                <div className="border-t border-gray-100 pt-3 mt-3">
+                  <p className="text-xs text-gray-400 mb-2">Share via WhatsApp</p>
+                  <div className="flex gap-2">
+                    {repair.status === 'Pending' && (
+                      <WhatsAppButton
+                        phone={customer?.phone}
+                        text={formatRepairReceiptText(shop, repair, customer, repairParts, 'initial')}
+                        label="Initial"
+                        variant="solid"
+                        className="flex-1"
+                      />
+                    )}
+                    {repair.status === 'Delivered' && (
+                      <WhatsAppButton
+                        phone={customer?.phone}
+                        text={formatRepairReceiptText(shop, repair, customer, repairParts, 'final')}
+                        label="Final"
+                        variant="outline"
+                        className="flex-1"
+                      />
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Hidden print view for inline printing */}
-      <div className="hidden">
-        <div ref={printRef}>
-          <PrintReceipt
-            shop={shop}
-            type="repair"
-            data={{ ...repair, _customer: customer, _parts: repairParts }}
-          />
-        </div>
-      </div>
     </div>
   );
 }

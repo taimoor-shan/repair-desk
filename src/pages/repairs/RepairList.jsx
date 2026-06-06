@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getRepairJobs, getCustomer } from '../../lib/api';
+import { getRepairJobs, searchRepairJobs, getRepairJobsInRange, getCustomer } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
@@ -10,9 +10,21 @@ export default function RepairList() {
   const [repairs, setRepairs] = useState([]);
   const [customers, setCustomers] = useState({});
   const [statusFilter, setStatusFilter] = useState('All');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [lastActive, setLastActive] = useState(null);
 
   useEffect(() => {
-    getRepairJobs().then((jobs) => {
+    async function fetchRepairs() {
+      let jobs;
+      if (searchQuery.trim()) {
+        jobs = await searchRepairJobs(searchQuery.trim());
+      } else if (dateFrom && dateTo) {
+        jobs = await getRepairJobsInRange(dateFrom, dateTo);
+      } else {
+        jobs = await getRepairJobs();
+      }
       setRepairs(jobs);
       const ids = [...new Set(jobs.map((j) => j.customerId).filter(Boolean))];
       Promise.all(ids.map((id) => getCustomer(id))).then((custs) => {
@@ -22,8 +34,9 @@ export default function RepairList() {
         });
         setCustomers(map);
       });
-    });
-  }, []);
+    }
+    fetchRepairs();
+  }, [searchQuery, dateFrom, dateTo]);
 
   const statuses = ['All', 'Pending', 'InProgress', 'Ready', 'Delivered'];
   const filtered =
@@ -41,6 +54,51 @@ export default function RepairList() {
         >
           + New Repair
         </Link>
+      </div>
+
+      {/* Search + Date Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setLastActive('search');
+            if (e.target.value.trim()) { setDateFrom(''); setDateTo(''); }
+          }}
+          placeholder="Search by receipt, customer, IMEI, device..."
+          className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => {
+            setDateFrom(e.target.value);
+            setLastActive('date');
+            if (e.target.value) { setSearchQuery(''); }
+          }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          title="From date"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => {
+            setDateTo(e.target.value);
+            setLastActive('date');
+            if (e.target.value) { setSearchQuery(''); }
+          }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          title="To date"
+        />
+        {(searchQuery || dateFrom || dateTo) && (
+          <button
+            onClick={() => { setSearchQuery(''); setDateFrom(''); setDateTo(''); setLastActive(null); }}
+            className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Status Filter */}

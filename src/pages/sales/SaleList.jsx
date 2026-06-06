@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getSales, getCustomer, deleteSale } from '../../lib/api';
+import { getSales, searchSales, getSalesInRange, getCustomer, deleteSale } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
@@ -10,11 +10,23 @@ export default function SaleList() {
   const navigate = useNavigate();
   const [sales, setSales] = useState([]);
   const [customers, setCustomers] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [lastActive, setLastActive] = useState(null);
   const confirm = useConfirm();
   const addToast = useToast();
 
   useEffect(() => {
-    getSales().then((s) => {
+    async function fetchSales() {
+      let s;
+      if (searchQuery.trim()) {
+        s = await searchSales(searchQuery.trim());
+      } else if (dateFrom && dateTo) {
+        s = await getSalesInRange(dateFrom, dateTo);
+      } else {
+        s = await getSales();
+      }
       setSales(s);
       const ids = [
         ...new Set(s.map((j) => j.customerId).filter(Boolean)),
@@ -26,8 +38,9 @@ export default function SaleList() {
         });
         setCustomers(map);
       });
-    });
-  }, []);
+    }
+    fetchSales();
+  }, [searchQuery, dateFrom, dateTo]);
 
   async function handleDelete(sale, e) {
     e.stopPropagation();
@@ -52,6 +65,51 @@ export default function SaleList() {
         >
           + New Sale
         </Link>
+      </div>
+
+      {/* Search + Date Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setLastActive('search');
+            if (e.target.value.trim()) { setDateFrom(''); setDateTo(''); }
+          }}
+          placeholder="Search by receipt or customer..."
+          className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => {
+            setDateFrom(e.target.value);
+            setLastActive('date');
+            if (e.target.value) { setSearchQuery(''); }
+          }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          title="From date"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => {
+            setDateTo(e.target.value);
+            setLastActive('date');
+            if (e.target.value) { setSearchQuery(''); }
+          }}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          title="To date"
+        />
+        {(searchQuery || dateFrom || dateTo) && (
+          <button
+            onClick={() => { setSearchQuery(''); setDateFrom(''); setDateTo(''); setLastActive(null); }}
+            className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {sales.length === 0 ? (
