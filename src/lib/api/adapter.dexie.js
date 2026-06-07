@@ -224,6 +224,8 @@ export async function getSettings() {
       shopName: '',
       shopPhone: '',
       shopAddress: '',
+      shopLogo: '',
+      currency: 'PKR',
       lastRepairSeq: 0,
       lastRepairDate: '',
       lastSaleSeq: 0,

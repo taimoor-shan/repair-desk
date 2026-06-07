@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ToastProvider } from './context/ToastContext';
 import { ConfirmProvider } from './context/ConfirmContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { getSettings } from './lib/api';
+import { setCurrency } from './lib/helpers';
 import Sidebar from './components/Sidebar';
 import BellIcon from './components/BellIcon';
 
@@ -44,6 +46,12 @@ function ProtectedRoute({ children }) {
 
 function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    getSettings().then((s) => {
+      if (s?.currency) setCurrency(s.currency);
+    });
+  }, []);
 
   return (
     <div className="flex min-h-screen bg-gray-50">

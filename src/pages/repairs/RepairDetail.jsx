@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getRepairJob, updateRepairJob, getRepairParts, addRepairParts, deleteRepairParts, restoreRepairPartsStock, getCustomer, getSettings, getProduct, updateProduct } from '../../lib/api';
+import { getRepairJob, updateRepairJob, getRepairParts, addRepairParts, deleteRepairParts, getCustomer, getSettings, getProduct, updateProduct } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -26,7 +26,7 @@ export default function RepairDetail() {
   const [editingParts, setEditingParts] = useState(false);
   const [tempParts, setTempParts] = useState([]);
 
-  const partsTotal = repairParts.reduce((s, p) => s + (p.costPrice || 0) * p.quantity, 0);
+  const partsTotal = repairParts.reduce((s, p) => s + (p.sellingPrice || p.costPrice || 0) * p.quantity, 0);
   const finalCost = (Number(laborCost) || 0) + partsTotal + (Number(extraCost) || 0);
 
   useEffect(() => {
@@ -113,43 +113,51 @@ export default function RepairDetail() {
   async function saveParts() {
     const id = Number(repair.id);
 
-    // 1. Load current parts
+    // 1. Load current parts (once)
     const currentParts = await getRepairParts(id);
 
-    // 2. Restore stock for all current parts
-    await restoreRepairPartsStock(id);
-
-    // 3. Re-fetch stock from DB and validate new parts
-    for (const part of tempParts) {
+    // 2. Restore stock for current parts (parallel)
+    await Promise.all(currentParts.map(async (part) => {
       const product = await getProduct(part.productId);
-      if (product && part.quantity > (product.stock || 0)) {
-        addToast(`Not enough stock for ${part.productName} (${product.stock} available)`, 'error');
-        return;
+      if (product) {
+        await updateProduct(part.productId, {
+          stock: (product.stock || 0) + part.quantity,
+        });
       }
+    }));
+
+    // 3. Validate stock for new parts (all in parallel)
+    const validation = await Promise.all(tempParts.map(async (part) => {
+      const product = await getProduct(part.productId);
+      const ok = !product || part.quantity <= (product.stock || 0);
+      return { part, product, ok };
+    }));
+
+    const bad = validation.find((r) => !r.ok);
+    if (bad) {
+      addToast(`Not enough stock for ${bad.part.productName} (${bad.product.stock} available)`, 'error');
+      return;
     }
 
-    // 4. Delete current parts
+    // 4. Delete current parts and insert new parts
     await deleteRepairParts(id);
-
-    // 5. Insert new parts
     if (tempParts.length > 0) {
       await addRepairParts(id, tempParts);
     }
 
-    // 6. Decrement stock for new parts
-    for (const part of tempParts) {
-      const product = await getProduct(part.productId);
+    // 5. Decrement stock for new parts (parallel)
+    await Promise.all(validation.map(async ({ part, product }) => {
       if (product) {
         await updateProduct(part.productId, {
           stock: (product.stock || 0) - part.quantity,
         });
       }
-    }
+    }));
 
-    // 7. Refresh, update final cost, and exit editing
+    // 6. Refresh and update final cost
     const updatedParts = await getRepairParts(id);
     setRepairParts(updatedParts);
-    const newPartsTotal = updatedParts.reduce((s, p) => s + (p.costPrice || 0) * p.quantity, 0);
+    const newPartsTotal = updatedParts.reduce((s, p) => s + (p.sellingPrice || p.costPrice || 0) * p.quantity, 0);
     const labor = Number(laborCost) || 0;
     const extra = Number(extraCost) || 0;
     const total = labor + newPartsTotal + extra;
@@ -410,7 +418,7 @@ export default function RepairDetail() {
                           {part.productName} × {part.quantity}
                         </span>
                         <span className="font-medium text-gray-900">
-                          {formatCurrency((part.costPrice || 0) * part.quantity)}
+                          {formatCurrency((part.sellingPrice || part.costPrice || 0) * part.quantity)}
                         </span>
                       </div>
                     ))}
@@ -419,7 +427,7 @@ export default function RepairDetail() {
                       <span>
                         {formatCurrency(
                           repairParts.reduce(
-                            (s, p) => s + (p.costPrice || 0) * p.quantity,
+                            (s, p) => s + (p.sellingPrice || p.costPrice || 0) * p.quantity,
                             0
                           )
                         )}

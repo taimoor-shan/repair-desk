@@ -1,10 +1,53 @@
-export function formatCurrency(amount) {
+// ─── Currency ──────────────────────────────────────────────────────
+
+const CURRENCY_LOCALE_MAP = {
+  PKR: 'en-PK',
+  USD: 'en-US',
+  EUR: 'en-IE',
+  GBP: 'en-GB',
+  INR: 'en-IN',
+  AED: 'en-AE',
+  SAR: 'en-SA',
+  CAD: 'en-CA',
+  AUD: 'en-AU',
+  JPY: 'en-JP',
+  CNY: 'en-CN',
+  KRW: 'en-KR',
+  MYR: 'en-MY',
+  SGD: 'en-SG',
+  LKR: 'en-LK',
+  BDT: 'en-BD',
+  NPR: 'en-NP',
+};
+
+const CURRENCY_DECIMALS = {
+  JPY: 0,
+  KRW: 0,
+  PKR: 0,
+};
+
+let _currencyCode = 'PKR';
+
+export function setCurrency(code) {
+  if (CURRENCY_LOCALE_MAP[code]) {
+    _currencyCode = code;
+  }
+}
+
+export function getCurrency() {
+  return _currencyCode;
+}
+
+export function formatCurrency(amount, currencyCode) {
   if (amount == null) return '—';
-  return new Intl.NumberFormat('en-PK', {
+  const code = currencyCode || _currencyCode;
+  const locale = CURRENCY_LOCALE_MAP[code] || 'en-PK';
+  const decimals = code in CURRENCY_DECIMALS ? CURRENCY_DECIMALS[code] : 2;
+  return new Intl.NumberFormat(locale, {
     style: 'currency',
-    currency: 'PKR',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    currency: code,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   }).format(amount);
 }
 
@@ -41,4 +84,45 @@ export function monthRange() {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   return { start: start.toISOString(), end: end.toISOString() };
+}
+
+// ─── Smart Search ──────────────────────────────────────────────────
+
+/**
+ * Rank items by prefix-first matching.
+ * Items where any field startsWith(query) come first (A-Z),
+ * then items where any field contains(query) but not startsWith (A-Z).
+ *
+ * @param {Array}  items  - array of objects
+ * @param {string} query  - search query
+ * @param {string[]} fields - field names to search
+ * @returns {Array} ranked results
+ */
+export function rankPrefixFirst(items, query, fields = ['name']) {
+  if (!query || !query.trim()) {
+    return [...items].sort((a, b) =>
+      (a[fields[0]] || '').localeCompare(b[fields[0]] || '')
+    );
+  }
+
+  const lower = query.toLowerCase().trim();
+  const prefix = [];
+  const contains = [];
+
+  items.forEach((item) => {
+    const fieldValues = fields.map((f) => (item[f] || '').toLowerCase());
+    const isPrefix = fieldValues.some((f) => f.startsWith(lower));
+    const isContains = fieldValues.some((f) => f.includes(lower));
+
+    if (isPrefix) {
+      prefix.push(item);
+    } else if (isContains) {
+      contains.push(item);
+    }
+  });
+
+  const sortFn = (a, b) =>
+    (a[fields[0]] || '').localeCompare(b[fields[0]] || '');
+
+  return [...prefix.sort(sortFn), ...contains.sort(sortFn)];
 }

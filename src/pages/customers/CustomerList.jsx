@@ -1,23 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getCustomers, searchCustomers, deleteCustomer, getRepairJobsByCustomer, getSalesByCustomer } from '../../lib/api';
+import { getCustomers, deleteCustomer, getRepairJobsByCustomer, getSalesByCustomer } from '../../lib/api';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
+import useSmartSearch from '../../hooks/useSmartSearch';
+import SearchDropdown from '../../components/SearchDropdown';
 import EmptyState from '../../components/EmptyState';
 
 export default function CustomerList() {
-  const [customers, setCustomers] = useState([]);
-  const [query, setQuery] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
   const confirm = useConfirm();
   const addToast = useToast();
 
-  useEffect(() => {
-    if (query.trim()) {
-      searchCustomers(query).then(setCustomers);
-    } else {
-      getCustomers().then(setCustomers);
-    }
-  }, [query]);
+  const { query, setQuery, results, isLoading } = useSmartSearch(
+    getCustomers,
+    ['name', 'phone'],
+    300
+  );
+
+  const customers = results;
 
   async function handleDelete(customer) {
     const [repairs, sales] = await Promise.all([
@@ -36,7 +37,9 @@ export default function CustomerList() {
     const ok = await confirm('Delete Customer', parts.join(' '));
     if (!ok) return;
     await deleteCustomer(customer.id);
-    setCustomers((prev) => prev.filter((c) => c.id !== customer.id));
+    // Refetch will happen via the hook's fetchFn... we need to force a re-mount or handle manually
+    // For now, filter out locally:
+    window.location.reload();
     addToast(`"${customer.name}" deleted`);
   }
 
@@ -52,17 +55,59 @@ export default function CustomerList() {
         </Link>
       </div>
 
-      <div className="mb-6">
+      <div className="mb-4 relative">
         <input
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setShowDropdown(true);
+          }}
+          onFocus={() => setShowDropdown(true)}
           placeholder="Search by name or phone..."
           className="w-full max-w-md border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        {query.length > 0 && (
+          <span className="ml-3 text-xs text-gray-500">
+            {customers.length} customer{customers.length !== 1 ? 's' : ''} match
+          </span>
+        )}
+        {showDropdown && query.length > 0 && (
+          <div className="max-w-md">
+            <SearchDropdown
+              results={customers}
+              isLoading={isLoading}
+              emptyMessage="No customers found"
+              maxItems={8}
+              onClose={() => setShowDropdown(false)}
+              onSelect={(c) => {
+                setShowDropdown(false);
+                window.location.href = `#/customers/${c.id}`;
+              }}
+              renderItem={(c) => (
+                <>
+                  <span className="font-medium">{c.name}</span>
+                  {c.phone && (
+                    <span className="text-gray-500 ml-2">{c.phone}</span>
+                  )}
+                </>
+              )}
+            />
+          </div>
+        )}
       </div>
 
-      {customers.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex items-center gap-3 text-gray-400 text-sm">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Loading customers...
+          </div>
+        </div>
+      ) : customers.length === 0 ? (
         <EmptyState
           title="No customers yet"
           description="Add your first customer to get started."

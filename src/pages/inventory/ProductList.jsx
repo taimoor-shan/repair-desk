@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import { getProducts, deleteProduct, adjustStock, addStockPurchase } from '../../lib/api';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
-import { formatCurrency } from '../../lib/helpers';
+import { formatCurrency, rankPrefixFirst } from '../../lib/helpers';
+import useDebounce from '../../hooks/useDebounce';
+import SearchDropdown from '../../components/SearchDropdown';
 import EmptyState from '../../components/EmptyState';
 
 const categories = ['All', 'Mobile', 'Accessory', 'RepairPart'];
@@ -21,6 +23,7 @@ export default function ProductList() {
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
+  const [showDropdown, setShowDropdown] = useState(false);
   const [adjustModal, setAdjustModal] = useState(null);
   const [adjustAmount, setAdjustAmount] = useState(0);
   const [adjustReason, setAdjustReason] = useState('');
@@ -28,19 +31,24 @@ export default function ProductList() {
   const [restockForm, setRestockForm] = useState(emptyRestock);
   const confirm = useConfirm();
   const addToast = useToast();
+  const debouncedSearch = useDebounce(search, 300);
+
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getProducts().then(setProducts);
+    getProducts().then((data) => {
+      setProducts(data);
+      setLoading(false);
+    });
   }, []);
 
-  const filtered = products.filter((p) => {
-    const matchSearch =
-      !search ||
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.sku || '').toLowerCase().includes(search.toLowerCase());
-    const matchCat = category === 'All' || p.category === category;
-    return matchSearch && matchCat;
-  });
+  // Category filter first, then prefix-first search
+  const categoryFiltered =
+    category === 'All'
+      ? products
+      : products.filter((p) => p.category === category);
+
+  const filtered = rankPrefixFirst(categoryFiltered, debouncedSearch, ['name']);
 
   async function handleDelete(product) {
     const ok = await confirm(
@@ -119,14 +127,46 @@ export default function ProductList() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or SKU..."
-          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+        <div className="flex-1 relative">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setShowDropdown(true);
+            }}
+            onFocus={() => setShowDropdown(true)}
+            placeholder="Search by name or SKU..."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {search.length > 0 && (
+            <span className="text-xs text-gray-500 mt-1 inline-block">
+              {filtered.length} product{filtered.length !== 1 ? 's' : ''} match
+            </span>
+          )}
+          {showDropdown && debouncedSearch.length > 0 && (
+            <SearchDropdown
+              results={filtered}
+              isLoading={false}
+              emptyMessage="No matching products"
+              maxItems={8}
+              onClose={() => setShowDropdown(false)}
+              onSelect={(p) => {
+                setShowDropdown(false);
+                window.location.href = `#/inventory/${p.id}/edit`;
+              }}
+              renderItem={(p) => (
+                <>
+                  <span className="font-medium">{p.name}</span>
+                  <span className="text-gray-400 text-xs ml-2">
+                    {p.sku && `${p.sku} · `}Stock: {p.stock} · {formatCurrency(p.sellingPrice)}
+                  </span>
+                </>
+              )}
+            />
+          )}
+        </div>
         <div className="flex flex-wrap gap-1 bg-white border border-gray-200 rounded-lg p-1">
           {categories.map((cat) => (
             <button
@@ -144,7 +184,17 @@ export default function ProductList() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex items-center gap-3 text-gray-400 text-sm">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Loading inventory...
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState
           title="No products yet"
           description="Add your first product to start tracking inventory."

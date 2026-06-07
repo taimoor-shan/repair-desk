@@ -1,32 +1,31 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getRepairJobs, searchRepairJobs, getRepairJobsInRange, getCustomer } from '../../lib/api';
+import { getRepairJobs, getCustomer } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
+import useSmartSearch from '../../hooks/useSmartSearch';
+import SearchDropdown from '../../components/SearchDropdown';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 
 export default function RepairList() {
   const navigate = useNavigate();
-  const [repairs, setRepairs] = useState([]);
   const [customers, setCustomers] = useState({});
   const [statusFilter, setStatusFilter] = useState('All');
-  const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [lastActive, setLastActive] = useState(null);
+  const [showDropdown, setShowDropdown] = useState(false);
 
+  // Prefetch all repairs via smart search hook
+  const { query, setQuery, results: repairs, isLoading } = useSmartSearch(
+    getRepairJobs,
+    ['receiptNumber', 'mobileBrand', 'mobileModel', 'imei', 'problemDescription'],
+    300
+  );
+
+  // Load customer map whenever repairs change
   useEffect(() => {
-    async function fetchRepairs() {
-      let jobs;
-      if (searchQuery.trim()) {
-        jobs = await searchRepairJobs(searchQuery.trim());
-      } else if (dateFrom && dateTo) {
-        jobs = await getRepairJobsInRange(dateFrom, dateTo);
-      } else {
-        jobs = await getRepairJobs();
-      }
-      setRepairs(jobs);
-      const ids = [...new Set(jobs.map((j) => j.customerId).filter(Boolean))];
+    const ids = [...new Set(repairs.map((j) => j.customerId).filter(Boolean))];
+    if (ids.length > 0) {
       Promise.all(ids.map((id) => getCustomer(id))).then((custs) => {
         const map = {};
         custs.forEach((c) => {
@@ -34,15 +33,45 @@ export default function RepairList() {
         });
         setCustomers(map);
       });
+    } else {
+      setCustomers({});
     }
-    fetchRepairs();
-  }, [searchQuery, dateFrom, dateTo]);
+  }, [repairs]);
 
-  const statuses = ['All', 'Pending', 'InProgress', 'Ready', 'Delivered'];
+  // Apply search - combine hook's prefix-first results with customer name search
+  const searchFiltered = query.trim()
+    ? repairs.filter((r) => {
+        const q = query.toLowerCase().trim();
+        const cust = customers[r.customerId];
+        return (
+          (r.receiptNumber || '').toLowerCase().includes(q) ||
+          (r.mobileBrand || '').toLowerCase().includes(q) ||
+          (r.mobileModel || '').toLowerCase().includes(q) ||
+          (r.imei || '').toLowerCase().includes(q) ||
+          (r.problemDescription || '').toLowerCase().includes(q) ||
+          (cust?.name || '').toLowerCase().includes(q) ||
+          (cust?.phone || '').toLowerCase().includes(q)
+        );
+      })
+    : repairs;
+
+  // Apply date range filter
+  const dateFiltered = (dateFrom && dateTo)
+    ? searchFiltered.filter((r) => {
+        const d = (r.receivedAt || '').slice(0, 10);
+        return d >= dateFrom && d <= dateTo;
+      }).sort((a, b) =>
+        (b.receivedAt || '').localeCompare(a.receivedAt || '')
+      )
+    : searchFiltered;
+
+  // Apply status filter
   const filtered =
     statusFilter === 'All'
-      ? repairs
-      : repairs.filter((r) => r.status === statusFilter);
+      ? dateFiltered
+      : dateFiltered.filter((r) => r.status === statusFilter);
+
+  const statuses = ['All', 'Pending', 'InProgress', 'Ready', 'Delivered'];
 
   return (
     <div>
@@ -58,24 +87,56 @@ export default function RepairList() {
 
       {/* Search + Date Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-            setLastActive('search');
-            if (e.target.value.trim()) { setDateFrom(''); setDateTo(''); }
-          }}
-          placeholder="Search by receipt, customer, IMEI, device..."
-          className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        <div className="flex-1 min-w-[200px] relative">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setShowDropdown(true);
+              if (e.target.value.trim()) { setDateFrom(''); setDateTo(''); }
+            }}
+            onFocus={() => setShowDropdown(true)}
+            placeholder="Search by receipt, customer, IMEI, device..."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {query.length > 0 && (
+            <span className="text-xs text-gray-500 mt-1 inline-block">
+              {filtered.length} repair{filtered.length !== 1 ? 's' : ''} match
+            </span>
+          )}
+          {showDropdown && query.length > 0 && (
+            <SearchDropdown
+              results={filtered}
+              isLoading={isLoading}
+              emptyMessage="No repairs found"
+              maxItems={8}
+              onClose={() => setShowDropdown(false)}
+              onSelect={(r) => {
+                setShowDropdown(false);
+                navigate(`/repairs/${r.id}`);
+              }}
+              renderItem={(r) => {
+                const cust = customers[r.customerId];
+                return (
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-blue-600">{r.receiptNumber || '—'}</span>
+                    <span className="text-gray-600">
+                      {cust?.name || 'Walk-in'} — {r.mobileBrand} {r.mobileModel}
+                    </span>
+                    <StatusBadge status={r.status} />
+                  </div>
+                );
+              }}
+            />
+          )}
+        </div>
         <input
           type="date"
           value={dateFrom}
           onChange={(e) => {
             setDateFrom(e.target.value);
-            setLastActive('date');
-            if (e.target.value) { setSearchQuery(''); }
+            if (e.target.value) { setQuery(''); }
           }}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           title="From date"
@@ -85,15 +146,14 @@ export default function RepairList() {
           value={dateTo}
           onChange={(e) => {
             setDateTo(e.target.value);
-            setLastActive('date');
-            if (e.target.value) { setSearchQuery(''); }
+            if (e.target.value) { setQuery(''); }
           }}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           title="To date"
         />
-        {(searchQuery || dateFrom || dateTo) && (
+        {(query || dateFrom || dateTo) && (
           <button
-            onClick={() => { setSearchQuery(''); setDateFrom(''); setDateTo(''); setLastActive(null); }}
+            onClick={() => { setQuery(''); setDateFrom(''); setDateTo(''); }}
             className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900"
           >
             Clear
@@ -118,7 +178,17 @@ export default function RepairList() {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex items-center gap-3 text-gray-400 text-sm">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Loading repairs...
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState
           title="No repairs found"
           description={

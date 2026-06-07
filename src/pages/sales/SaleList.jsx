@@ -1,36 +1,33 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getSales, searchSales, getSalesInRange, getCustomer, deleteSale } from '../../lib/api';
+import { getSales, getCustomer, deleteSale } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
+import useSmartSearch from '../../hooks/useSmartSearch';
+import SearchDropdown from '../../components/SearchDropdown';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import EmptyState from '../../components/EmptyState';
 
 export default function SaleList() {
   const navigate = useNavigate();
-  const [sales, setSales] = useState([]);
   const [customers, setCustomers] = useState({});
-  const [searchQuery, setSearchQuery] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [lastActive, setLastActive] = useState(null);
+  const [showDropdown, setShowDropdown] = useState(false);
   const confirm = useConfirm();
   const addToast = useToast();
 
+  // Prefetch all sales via smart search hook
+  const { query, setQuery, results: sales, isLoading } = useSmartSearch(
+    getSales,
+    ['receiptNumber'],
+    300
+  );
+
+  // Load customer map whenever sales change
   useEffect(() => {
-    async function fetchSales() {
-      let s;
-      if (searchQuery.trim()) {
-        s = await searchSales(searchQuery.trim());
-      } else if (dateFrom && dateTo) {
-        s = await getSalesInRange(dateFrom, dateTo);
-      } else {
-        s = await getSales();
-      }
-      setSales(s);
-      const ids = [
-        ...new Set(s.map((j) => j.customerId).filter(Boolean)),
-      ];
+    const ids = [...new Set(sales.map((s) => s.customerId).filter(Boolean))];
+    if (ids.length > 0) {
       Promise.all(ids.map((id) => getCustomer(id))).then((custs) => {
         const map = {};
         custs.forEach((c) => {
@@ -38,9 +35,35 @@ export default function SaleList() {
         });
         setCustomers(map);
       });
+    } else {
+      setCustomers({});
     }
-    fetchSales();
-  }, [searchQuery, dateFrom, dateTo]);
+  }, [sales]);
+
+  // Apply search - combine hook's prefix-first results with customer name search
+  const searchFiltered = query.trim()
+    ? sales.filter((s) => {
+        const q = query.toLowerCase().trim();
+        const cust = customers[s.customerId];
+        return (
+          (s.receiptNumber || '').toLowerCase().includes(q) ||
+          (cust?.name || '').toLowerCase().includes(q) ||
+          (cust?.phone || '').toLowerCase().includes(q)
+        );
+      })
+    : sales;
+
+  // Apply date range filter
+  const dateFiltered = (dateFrom && dateTo)
+    ? searchFiltered.filter((s) => {
+        const d = (s.createdAt || '').slice(0, 10);
+        return d >= dateFrom && d <= dateTo;
+      }).sort((a, b) =>
+        (b.createdAt || '').localeCompare(a.createdAt || '')
+      )
+    : searchFiltered;
+
+  const filtered = dateFiltered;
 
   async function handleDelete(sale, e) {
     e.stopPropagation();
@@ -51,8 +74,8 @@ export default function SaleList() {
     );
     if (!ok) return;
     await deleteSale(sale.id);
-    setSales((prev) => prev.filter((s) => s.id !== sale.id));
     addToast('Sale deleted, stock restored');
+    window.location.reload();
   }
 
   return (
@@ -69,24 +92,61 @@ export default function SaleList() {
 
       {/* Search + Date Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-            setLastActive('search');
-            if (e.target.value.trim()) { setDateFrom(''); setDateTo(''); }
-          }}
-          placeholder="Search by receipt or customer..."
-          className="flex-1 min-w-[200px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        <div className="flex-1 min-w-[200px] relative">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setShowDropdown(true);
+              if (e.target.value.trim()) { setDateFrom(''); setDateTo(''); }
+            }}
+            onFocus={() => setShowDropdown(true)}
+            placeholder="Search by receipt or customer..."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {query.length > 0 && (
+            <span className="text-xs text-gray-500 mt-1 inline-block">
+              {filtered.length} sale{filtered.length !== 1 ? 's' : ''} match
+            </span>
+          )}
+          {showDropdown && query.length > 0 && (
+            <SearchDropdown
+              results={filtered}
+              isLoading={isLoading}
+              emptyMessage="No sales found"
+              maxItems={8}
+              onClose={() => setShowDropdown(false)}
+              onSelect={(s) => {
+                setShowDropdown(false);
+                navigate(`/sales/${s.id}`);
+              }}
+              renderItem={(s) => {
+                const cust = customers[s.customerId];
+                return (
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-blue-600">{s.receiptNumber}</span>
+                    <span className="text-gray-600">
+                      {cust?.name || 'Walk-in'}
+                    </span>
+                    <span className="text-gray-400 text-xs ml-auto">
+                      {formatDate(s.createdAt)}
+                    </span>
+                    <span className="font-medium">
+                      {formatCurrency(s.totalAmount - (s.discount || 0))}
+                    </span>
+                  </div>
+                );
+              }}
+            />
+          )}
+        </div>
         <input
           type="date"
           value={dateFrom}
           onChange={(e) => {
             setDateFrom(e.target.value);
-            setLastActive('date');
-            if (e.target.value) { setSearchQuery(''); }
+            if (e.target.value) { setQuery(''); }
           }}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           title="From date"
@@ -96,15 +156,14 @@ export default function SaleList() {
           value={dateTo}
           onChange={(e) => {
             setDateTo(e.target.value);
-            setLastActive('date');
-            if (e.target.value) { setSearchQuery(''); }
+            if (e.target.value) { setQuery(''); }
           }}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           title="To date"
         />
-        {(searchQuery || dateFrom || dateTo) && (
+        {(query || dateFrom || dateTo) && (
           <button
-            onClick={() => { setSearchQuery(''); setDateFrom(''); setDateTo(''); setLastActive(null); }}
+            onClick={() => { setQuery(''); setDateFrom(''); setDateTo(''); }}
             className="px-3 py-2 text-sm text-gray-600 hover:text-gray-900"
           >
             Clear
@@ -112,7 +171,17 @@ export default function SaleList() {
         )}
       </div>
 
-      {sales.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="flex items-center gap-3 text-gray-400 text-sm">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Loading sales...
+          </div>
+        </div>
+      ) : filtered.length === 0 ? (
         <EmptyState
           title="No sales yet"
           description="Record your first sale."
@@ -152,7 +221,7 @@ export default function SaleList() {
               </tr>
             </thead>
             <tbody>
-              {sales.map((s) => {
+              {filtered.map((s) => {
                 const cust = customers[s.customerId];
                 return (
                   <tr

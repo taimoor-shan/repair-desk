@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
 import { getCustomer, searchCustomers } from '../lib/api';
+import useDebounce from '../hooks/useDebounce';
 
 export default function CustomerPicker({ value, onChange, required = false }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(null);
   const [open, setOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const debouncedQuery = useDebounce(query, 300);
 
   useEffect(() => {
     if (value && !selected) {
@@ -18,12 +21,24 @@ export default function CustomerPicker({ value, onChange, required = false }) {
     }
   }, [value]);
 
+  // Search when debouncedQuery changes
+  useEffect(() => {
+    if (debouncedQuery.length > 0) {
+      setIsSearching(true);
+      searchCustomers(debouncedQuery).then((res) => {
+        setResults(res.sort((a, b) => a.name.localeCompare(b.name)));
+        setIsSearching(false);
+      });
+    } else if (query.length === 0) {
+      setResults([]);
+      setIsSearching(false);
+    }
+  }, [debouncedQuery]);
+
   function handleSearch(q) {
     setQuery(q);
     setOpen(true);
-    if (q.length > 0) {
-      searchCustomers(q).then(setResults);
-    } else {
+    if (q.length === 0) {
       setResults([]);
     }
   }

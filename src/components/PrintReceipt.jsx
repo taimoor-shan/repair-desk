@@ -147,14 +147,14 @@ export default function PrintReceipt({ shop, type, data }) {
                     {part.productName} × {part.quantity}
                   </span>
                   <span style={{ fontSize: '11px' }}>
-                    {formatCurrency((part.costPrice || 0) * part.quantity)}
+                    {formatCurrency((part.sellingPrice || part.costPrice || 0) * part.quantity)}
                   </span>
                 </div>
               ))}
               <div style={{ ...s.row, fontWeight: 'bold', borderTop: '1px solid #ddd', paddingTop: '2px', marginTop: '2px' }}>
                 <span style={{ fontSize: '11px' }}>Parts Total:</span>
                 <span style={{ fontSize: '11px' }}>
-                  {formatCurrency(data._parts.reduce((s, p) => s + (p.costPrice || 0) * p.quantity, 0))}
+                  {formatCurrency(data._parts.reduce((s, p) => s + (p.sellingPrice || p.costPrice || 0) * p.quantity, 0))}
                 </span>
               </div>
             </div>

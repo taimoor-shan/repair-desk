@@ -46,9 +46,9 @@ export function formatRepairReceiptText(shop, repair, customer, parts, receiptTy
     lines.push('');
     lines.push('--- PARTS USED ---');
     parts.forEach((part) => {
-      lines.push(`${part.productName}  x${part.quantity}  ${formatCurrency((part.costPrice || 0) * part.quantity)}`);
+      lines.push(`${part.productName}  x${part.quantity}  ${formatCurrency((part.sellingPrice || part.costPrice || 0) * part.quantity)}`);
     });
-    const partsTotal = parts.reduce((s, p) => s + (p.costPrice || 0) * p.quantity, 0);
+    const partsTotal = parts.reduce((s, p) => s + (p.sellingPrice || p.costPrice || 0) * p.quantity, 0);
     lines.push(`Parts Total: ${formatCurrency(partsTotal)}`);
   }
 

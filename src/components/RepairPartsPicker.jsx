@@ -1,19 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { getProducts } from '../lib/api';
+import { formatCurrency } from '../lib/helpers';
+import useSmartSearch from '../hooks/useSmartSearch';
+import SearchDropdown from './SearchDropdown';
 
 export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) {
-  const [products, setProducts] = useState([]);
-  const [search, setSearch] = useState('');
   const [showResults, setShowResults] = useState(false);
 
-  useEffect(() => {
-    getProducts().then(setProducts);
-  }, []);
-
-  const repairParts = products.filter((p) => p.category === 'RepairPart');
-
-  const filtered = repairParts.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
+  const { query, setQuery, results: filtered, isLoading } = useSmartSearch(
+    () => getProducts().then((prods) => prods.filter((p) => p.category === 'RepairPart')),
+    ['name'],
+    0
   );
 
   function handleSelect(product) {
@@ -24,11 +21,11 @@ export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) 
       costPrice: product.costPrice || 0,
       sellingPrice: product.sellingPrice || 0,
     });
-    setSearch('');
+    setQuery('');
     setShowResults(false);
   }
 
-  const partsTotal = parts.reduce((s, p) => s + p.quantity * p.costPrice, 0);
+  const partsTotal = parts.reduce((s, p) => s + p.quantity * (p.sellingPrice || p.costPrice || 0), 0);
 
   return (
     <div>
@@ -39,38 +36,33 @@ export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) 
       <div className="relative">
         <input
           type="text"
-          value={search}
+          value={query}
           onChange={(e) => {
-            setSearch(e.target.value);
+            setQuery(e.target.value);
             setShowResults(true);
           }}
           onFocus={() => setShowResults(true)}
           placeholder="Search part..."
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        {showResults && search.length > 0 && (
-          <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-auto">
-            {filtered.length > 0 ? (
-              filtered.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 ${
-                    p.stock <= 0 ? 'text-gray-400 hover:bg-gray-50' : 'hover:bg-gray-50'
-                  }`}
-                  onClick={() => handleSelect(p)}
-                >
-                  <span className="font-medium">{p.name}</span>
-                  <span className={p.stock <= 0 ? 'text-red-400' : 'text-gray-400'}>
-                    {' '}(Stock: {p.stock})
-                  </span>
-                  {p.stock <= 0 && ' ⚠'}
-                </button>
-              ))
-            ) : (
-              <p className="p-3 text-sm text-gray-500">No repair parts found</p>
+        {showResults && query.length > 0 && (
+          <SearchDropdown
+            results={filtered}
+            isLoading={isLoading}
+            emptyMessage="No repair parts found"
+            maxItems={8}
+            onClose={() => setShowResults(false)}
+            onSelect={handleSelect}
+            renderItem={(p) => (
+              <span className={p.stock <= 0 ? 'text-gray-400' : ''}>
+                <span className="font-medium">{p.name}</span>
+                <span className={p.stock <= 0 ? 'text-red-400' : 'text-gray-400'}>
+                  {' '}(Stock: {p.stock})
+                </span>
+                {p.stock <= 0 && ' ⚠'}
+              </span>
             )}
-          </div>
+          />
         )}
       </div>
 
@@ -81,7 +73,7 @@ export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) 
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-3 py-2 text-xs font-medium text-gray-500">Part</th>
                 <th className="text-center px-3 py-2 text-xs font-medium text-gray-500 w-16">Qty</th>
-                <th className="text-right px-3 py-2 text-xs font-medium text-gray-500 w-24">Unit Cost</th>
+                <th className="text-right px-3 py-2 text-xs font-medium text-gray-500 w-24">Unit Price</th>
                 <th className="text-right px-3 py-2 text-xs font-medium text-gray-500 w-24">Subtotal</th>
                 <th className="w-8" />
               </tr>
@@ -104,15 +96,15 @@ export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) 
                   <td className="px-3 py-2 text-right">
                     <input
                       type="number"
-                      value={part.costPrice}
+                      value={part.sellingPrice ?? part.costPrice ?? 0}
                       onChange={(e) =>
-                        onUpdate(part.productId, 'costPrice', Number(e.target.value))
+                        onUpdate(part.productId, 'sellingPrice', Number(e.target.value))
                       }
                       className="w-full text-right border border-gray-300 rounded px-1 py-0.5 text-sm"
                     />
                   </td>
                   <td className="px-3 py-2 text-right text-gray-900">
-                    {(part.quantity * part.costPrice).toLocaleString()}
+                    {formatCurrency(part.quantity * (part.sellingPrice || part.costPrice || 0))}
                   </td>
                   <td className="px-2 py-2 text-center">
                     <button
@@ -128,7 +120,7 @@ export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) 
             </tbody>
           </table>
           <div className="bg-gray-50 px-3 py-2 text-sm text-right text-gray-700 border-t border-gray-200">
-            Parts Total: <strong>{partsTotal.toLocaleString()}</strong>
+            Parts Total: <strong>{formatCurrency(partsTotal)}</strong>
           </div>
         </div>
       )}
