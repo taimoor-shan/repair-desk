@@ -1,28 +1,42 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { getProducts } from '../lib/api';
-import useDebounce from '../hooks/useDebounce';
 import { rankPrefixFirst } from '../lib/helpers';
 
 export default function ProductPicker({ onSelect }) {
   const [query, setQuery] = useState('');
   const [products, setProducts] = useState([]);
   const [open, setOpen] = useState(false);
-  const debouncedQuery = useDebounce(query, 300);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     getProducts().then(setProducts);
   }, []);
 
-  // Prefix-first ranked filter with debounce
-  const filtered = rankPrefixFirst(
-    products.filter((p) => p.stock > 0),
-    debouncedQuery,
-    ['name']
-  );
+  const inStock = products.filter((p) => p.stock > 0);
+
+  // Prefix-first ranked filter — name or SKU (barcode scans type into SKU)
+  const filtered = rankPrefixFirst(inStock, query, ['name', 'sku']);
+
+  function selectProduct(product) {
+    onSelect(product);
+    setQuery('');
+    setOpen(false);
+    // Keep focus for the next scan; parent re-render can steal it
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  function handleKeyDown(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (filtered.length > 0) {
+      selectProduct(filtered[0]);
+    }
+  }
 
   return (
     <div className="relative">
       <input
+        ref={inputRef}
         type="text"
         value={query}
         onChange={(e) => {
@@ -30,10 +44,11 @@ export default function ProductPicker({ onSelect }) {
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        placeholder="Search product..."
+        onKeyDown={handleKeyDown}
+        placeholder="Search product or scan barcode..."
         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
-      {open && debouncedQuery.length > 0 && (
+      {open && query.trim().length > 0 && (
         <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-auto">
           {filtered.length > 0 ? (
             filtered.map((p) => (
@@ -41,11 +56,7 @@ export default function ProductPicker({ onSelect }) {
                 key={p.id}
                 type="button"
                 className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-100 last:border-0"
-                onClick={() => {
-                  onSelect(p);
-                  setQuery('');
-                  setOpen(false);
-                }}
+                onClick={() => selectProduct(p)}
               >
                 <span className="font-medium">{p.name}</span>
                 <span className="text-gray-500 ml-2">

@@ -95,7 +95,7 @@ export function monthRange() {
  *
  * @param {Array}  items  - array of objects
  * @param {string} query  - search query
- * @param {string[]} fields - field names to search
+ * @param {string[]} fields - field names to search (null/undefined values treated as '')
  * @returns {Array} ranked results
  */
 export function rankPrefixFirst(items, query, fields = ['name']) {
