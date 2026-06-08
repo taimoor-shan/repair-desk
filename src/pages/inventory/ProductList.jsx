@@ -465,10 +465,10 @@ export default function ProductList() {
               {restockForm.quantity > 0 && (
                 <p className="text-sm text-gray-500">
                   Total cost:{' '}
-                  {(
+                  {formatCurrency(
                     restockForm.quantity *
                     (Number(restockForm.unitCost) || restockModal.costPrice || 0)
-                  ).toLocaleString()}
+                  )}
                 </p>
               )}
             </div>

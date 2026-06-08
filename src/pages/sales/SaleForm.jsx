@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { addSale, getSale, updateSale, getProduct, updateProduct } from '../../lib/api';
+import { formatCurrency } from '../../lib/helpers';
 import { generateSaleNumber } from '../../lib/receiptNumber';
 import { useToast } from '../../context/ToastContext';
 import CustomerPicker from '../../components/CustomerPicker';
@@ -244,7 +245,7 @@ export default function SaleForm() {
                     </div>
                     <div className="w-24 text-right">
                       <p className="text-sm font-medium text-gray-900">
-                        {(item.quantity * item.unitPrice).toLocaleString()}
+                        {formatCurrency(item.quantity * item.unitPrice)}
                       </p>
                     </div>
                     <button
@@ -268,7 +269,7 @@ export default function SaleForm() {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-gray-500">Subtotal</span>
-              <span className="font-medium">{subtotal.toLocaleString()}</span>
+              <span className="font-medium">{formatCurrency(subtotal)}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-gray-500">Discount</span>
@@ -282,7 +283,7 @@ export default function SaleForm() {
             </div>
             <div className="flex justify-between pt-2 border-t border-gray-200">
               <span className="font-semibold">Total</span>
-              <span className="font-bold text-lg">{total.toLocaleString()}</span>
+              <span className="font-bold text-lg">{formatCurrency(total)}</span>
             </div>
           </div>
 

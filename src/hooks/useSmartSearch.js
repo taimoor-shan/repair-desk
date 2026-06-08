@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import useDebounce from './useDebounce';
 
 /**
@@ -15,12 +15,14 @@ export default function useSmartSearch(fetchFn, searchFields, debounceMs = 300) 
   const [isLoading, setIsLoading] = useState(true);
   const debouncedQuery = useDebounce(query, debounceMs);
   const fetchRef = useRef(fetchFn);
-  fetchRef.current = fetchFn;
+
+  useEffect(() => {
+    fetchRef.current = fetchFn;
+  }, [fetchFn]);
 
   // Prefetch all data on mount
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
     fetchRef.current().then((items) => {
       if (!cancelled) {
         setAllItems(items || []);
@@ -32,8 +34,12 @@ export default function useSmartSearch(fetchFn, searchFields, debounceMs = 300) 
     };
   }, []);
 
+  const searchFieldsKey = JSON.stringify(searchFields);
+
   // Filter + rank results when debouncedQuery or allItems change
-  const { results, hasResults } = rankItems(allItems, searchFields, debouncedQuery);
+  const { results, hasResults } = useMemo(() => (
+    rankItems(allItems, JSON.parse(searchFieldsKey), debouncedQuery)
+  ), [allItems, searchFieldsKey, debouncedQuery]);
 
   return { query, setQuery, debouncedQuery, results, isLoading, hasResults };
 }
