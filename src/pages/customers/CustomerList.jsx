@@ -45,7 +45,7 @@ export default function CustomerList() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-2">
         <h2 className="text-2xl font-bold text-gray-900">Customers</h2>
         <Link
           to="/customers/new"

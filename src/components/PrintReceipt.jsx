@@ -1,31 +1,57 @@
 import { formatCurrency } from '../lib/helpers';
 
-const printStyles = `
-  @media print {
-    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .print-area { padding: 16px !important; }
-    body { margin: 0; }
-  }
-  @page {
-    margin: 0;
-    size: auto;
-  }
-`;
+function getPrintStyles(layout) {
+  const isA4 = layout === 'a4';
 
-export default function PrintReceipt({ shop, type, data }) {
+  return `
+    @media print {
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body { margin: 0; }
+    }
+    @page {
+      margin: ${isA4 ? '15mm' : '0'};
+      size: ${isA4 ? 'A4' : 'auto'};
+    }
+    @media print {
+      .print-area--thermal {
+        padding: 16px !important;
+        max-width: 320px !important;
+        margin: 0 auto !important;
+      }
+      .print-area--a4 {
+        max-width: none !important;
+        width: 100% !important;
+        padding: 0 !important;
+        font-size: 14px !important;
+      }
+      .print-area--a4 .receipt-shop-name { font-size: 20px !important; }
+      .print-area--a4 .receipt-sub { font-size: 13px !important; }
+      .print-area--a4 .receipt-sm { font-size: 13px !important; }
+      .print-area--a4 .receipt-total { font-size: 15px !important; }
+      .print-area--a4 .receipt-footer { font-size: 13px !important; }
+      .print-area--a4 .receipt-terms { font-size: 11px !important; }
+      .print-area--a4 .receipt-logo {
+        max-height: 80px !important;
+        max-width: 280px !important;
+      }
+      .print-area--a4 .receipt-meta-label { min-width: 72px !important; }
+    }
+  `;
+}
+
+export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
   if (!data) return null;
 
   const isRepair = type === 'repair' || type === 'initial' || type === 'final';
   const isSale = type === 'sale';
-  const isInitial = type === 'repair' || type === 'initial';
   const isFinal = type === 'final';
 
   const s = {
     wrap: {
-      fontFamily: "'Courier New', Courier, monospace",
+      fontFamily: "'Roboto', sans-serif",
       fontSize: '12px',
       lineHeight: '1.5',
-      color: '#111',
+      color: '#000',
       background: '#fff',
       maxWidth: '320px',
       margin: '0 auto',
@@ -37,7 +63,6 @@ export default function PrintReceipt({ shop, type, data }) {
     divider: { borderTop: '1px dashed #aaa', margin: '10px 0' },
     row: { display: 'flex', justifyContent: 'space-between', padding: '2px 0' },
     label: { color: '#555' },
-    bold: { fontWeight: 'bold' },
     totalRow: { display: 'flex', justifyContent: 'space-between', padding: '3px 0', fontWeight: 'bold', fontSize: '13px' },
     table: { width: '100%', borderCollapse: 'collapse', marginBottom: '8px' },
     th: { textAlign: 'left', fontWeight: 'bold', paddingBottom: '4px', borderBottom: '1px solid #ccc', fontSize: '11px' },
@@ -52,18 +77,27 @@ export default function PrintReceipt({ shop, type, data }) {
 
   return (
     <>
-      <style>{printStyles}</style>
-      <div className="print-area" style={s.wrap}>
+      <style>{getPrintStyles(layout)}</style>
+      <div className={`print-area print-area--${layout}`} style={s.wrap}>
 
         {/* Header */}
-        <div style={s.center}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px dashed #aaa', gap: '12px' }}>
+          <div style={{ flex: 1, textAlign: 'left' }}>
+            <p className="receipt-shop-name" style={s.shopName}>{shop?.shopName || 'Repair Desk'}</p>
+            {shop?.shopAddress && <p className="receipt-sub" style={s.sub}>{shop.shopAddress}</p>}
+            {shop?.shopPhone && <p className="receipt-sub" style={s.sub}>{shop.shopPhone}</p>}
+            {shop?.shopHours && <p className="receipt-sub" style={s.sub}>{shop.shopHours}</p>}
+          </div>
           {shop?.shopLogo && (
-            <img src={shop.shopLogo} alt="Logo"
-              style={{ maxHeight: '44px', maxWidth: '180px', objectFit: 'contain', display: 'block', margin: '0 auto 6px' }} />
+            <div style={{ flexShrink: 0 }}>
+              <img
+                src={shop.shopLogo}
+                alt="Logo"
+                className="receipt-logo"
+                style={{ maxHeight: '44px', maxWidth: '120px', objectFit: 'contain' }}
+              />
+            </div>
           )}
-          <p style={s.shopName}>{shop?.shopName || 'Repair Desk'}</p>
-          {shop?.shopAddress && <p style={s.sub}>{shop.shopAddress}</p>}
-          {shop?.shopPhone && <p style={s.sub}>{shop.shopPhone}</p>}
         </div>
 
         {/* Receipt number + date */}
@@ -77,12 +111,12 @@ export default function PrintReceipt({ shop, type, data }) {
           <div style={{ marginBottom: '8px' }}>
             <div style={s.divider} />
             <div style={s.metaRow}>
-              <span style={s.metaLabel}>Customer:</span>
+              <span className="receipt-meta-label" style={s.metaLabel}>Customer:</span>
               <span>{data._customer.name}</span>
             </div>
             {data._customer.phone && (
               <div style={s.metaRow}>
-                <span style={s.metaLabel}>Phone:</span>
+                <span className="receipt-meta-label" style={s.metaLabel}>Phone:</span>
                 <span>{data._customer.phone}</span>
               </div>
             )}
@@ -102,7 +136,7 @@ export default function PrintReceipt({ shop, type, data }) {
               ['Status', data.status],
             ].filter(Boolean).map(([label, value]) => (
               <div key={label} style={s.metaRow}>
-                <span style={s.metaLabel}>{label}:</span>
+                <span className="receipt-meta-label" style={s.metaLabel}>{label}:</span>
                 <span style={{ wordBreak: 'break-word' }}>{value}</span>
               </div>
             ))}
@@ -114,51 +148,23 @@ export default function PrintReceipt({ shop, type, data }) {
           <table style={s.table}>
             <thead>
               <tr>
-                <th style={{ ...s.th, width: '44%' }}>Item</th>
-                <th style={{ ...s.th, ...s.tdCenter, width: '12%' }}>Qty</th>
-                <th style={{ ...s.thRight, width: '22%' }}>Price</th>
-                <th style={{ ...s.thRight, width: '22%' }}>Total</th>
+                <th className="receipt-sm" style={{ ...s.th, width: '44%' }}>Item</th>
+                <th className="receipt-sm" style={{ ...s.th, ...s.tdCenter, width: '12%' }}>Qty</th>
+                <th className="receipt-sm" style={{ ...s.thRight, width: '22%' }}>Price</th>
+                <th className="receipt-sm" style={{ ...s.thRight, width: '22%' }}>Total</th>
               </tr>
             </thead>
             <tbody>
               {data.items.map((item, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={s.td}>{item.productName}</td>
-                  <td style={s.tdCenter}>{item.quantity}</td>
-                  <td style={s.tdRight}>{formatCurrency(item.unitPrice)}</td>
-                  <td style={s.tdRight}>{formatCurrency(item.quantity * item.unitPrice)}</td>
+                  <td className="receipt-sm" style={s.td}>{item.productName}</td>
+                  <td className="receipt-sm" style={s.tdCenter}>{item.quantity}</td>
+                  <td className="receipt-sm" style={s.tdRight}>{formatCurrency(item.unitPrice)}</td>
+                  <td className="receipt-sm" style={s.tdRight}>{formatCurrency(item.quantity * item.unitPrice)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        )}
-
-        {/* Parts used (repair only) */}
-        {isRepair && data._parts && data._parts.length > 0 && (
-          <>
-            <div style={s.divider} />
-            <div style={{ marginBottom: '8px' }}>
-              <p style={{ fontWeight: 'bold', fontSize: '11px', marginBottom: '4px' }}>
-                Parts Used:
-              </p>
-              {data._parts.map((part) => (
-                <div key={part.id} style={s.row}>
-                  <span style={{ fontSize: '11px' }}>
-                    {part.productName} × {part.quantity}
-                  </span>
-                  <span style={{ fontSize: '11px' }}>
-                    {formatCurrency((part.sellingPrice || part.costPrice || 0) * part.quantity)}
-                  </span>
-                </div>
-              ))}
-              <div style={{ ...s.row, fontWeight: 'bold', borderTop: '1px solid #ddd', paddingTop: '2px', marginTop: '2px' }}>
-                <span style={{ fontSize: '11px' }}>Parts Total:</span>
-                <span style={{ fontSize: '11px' }}>
-                  {formatCurrency(data._parts.reduce((s, p) => s + (p.sellingPrice || p.costPrice || 0) * p.quantity, 0))}
-                </span>
-              </div>
-            </div>
-          </>
         )}
 
         {/* Totals */}
@@ -179,7 +185,7 @@ export default function PrintReceipt({ shop, type, data }) {
                 </div>
               )}
               {data.finalCost != null && (
-                <div style={s.totalRow}>
+                <div className="receipt-total" style={s.totalRow}>
                   <span>Final Cost</span>
                   <span>{formatCurrency(data.finalCost)}</span>
                 </div>
@@ -198,7 +204,7 @@ export default function PrintReceipt({ shop, type, data }) {
                   <span>−{formatCurrency(data.discount)}</span>
                 </div>
               )}
-              <div style={s.totalRow}>
+              <div className="receipt-total" style={s.totalRow}>
                 <span>Total</span>
                 <span>{formatCurrency(data.totalAmount - (data.discount || 0))}</span>
               </div>
@@ -207,13 +213,13 @@ export default function PrintReceipt({ shop, type, data }) {
         </div>
 
         {/* Footer */}
-        <div style={s.footer}>
+        <div className="receipt-footer" style={s.footer}>
           <p style={{ margin: '0 0 2px' }}>Thank you for your business!</p>
           <p style={{ margin: 0 }}>{new Date().toLocaleString()}</p>
         </div>
 
         {/* Terms & Conditions */}
-        <div style={{ ...s.footer, fontSize: '9px', color: '#555', textAlign: 'left', lineHeight: '1.4' }}>
+        <div className="receipt-footer receipt-terms" style={{ ...s.footer, fontSize: '9px', color: '#555', textAlign: 'left', lineHeight: '1.4' }}>
           <p style={{ fontWeight: 'bold', margin: '0 0 4px', textAlign: 'center' }}>TERMS AND CONDITIONS</p>
           <ol style={{ margin: 0, paddingLeft: '14px' }}>
             <li>All phones to be tested and paid for at collection</li>

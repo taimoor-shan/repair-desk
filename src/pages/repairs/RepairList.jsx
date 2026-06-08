@@ -75,7 +75,7 @@ export default function RepairList() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-2">
         <h2 className="text-2xl font-bold text-gray-900">Repairs</h2>
         <Link
           to="/repairs/new"
@@ -119,7 +119,7 @@ export default function RepairList() {
               renderItem={(r) => {
                 const cust = customers[r.customerId];
                 return (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium text-blue-600">{r.receiptNumber || '—'}</span>
                     <span className="text-gray-600">
                       {cust?.name || 'Walk-in'} — {r.mobileBrand} {r.mobileModel}

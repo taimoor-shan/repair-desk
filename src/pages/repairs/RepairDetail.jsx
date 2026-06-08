@@ -6,10 +6,10 @@ import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
 import StatusBadge from '../../components/StatusBadge';
 import RepairPartsPicker from '../../components/RepairPartsPicker';
-import PrintReceipt from '../../components/PrintReceipt';
+import PrintReceiptButton from '../../components/PrintReceiptButton';
 import WhatsAppButton from '../../components/WhatsAppButton';
 import { formatRepairReceiptText } from '../../lib/whatsapp';
-import ReactDOM from 'react-dom/client';
+import { printReceiptDocument } from '../../lib/printReceipt';
 
 export default function RepairDetail() {
   const { id } = useParams();
@@ -84,30 +84,13 @@ export default function RepairDetail() {
     addToast('Costs updated');
   }
 
-  function printReceipt(type) {
-    const win = window.open('', '_blank', 'width=400,height=600');
-    if (!win) return;
-    const doc = win.document;
-    doc.write(
-      '<!DOCTYPE html><html><head><title>Receipt</title><style>' +
-        'body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; }' +
-        '@media print { body { margin: 0; padding: 0; } }' +
-        '</style></head><body><div id="print-root"></div></body></html>'
-    );
-    doc.close();
-
-    const root = ReactDOM.createRoot(doc.getElementById('print-root'));
-    root.render(
-      <PrintReceipt
-        shop={shop}
-        type={type}
-        data={{ ...repair, _customer: customer, _parts: repairParts }}
-      />
-    );
-
-    setTimeout(() => {
-      win.print();
-    }, 300);
+  function printReceipt(type, layout = 'a4') {
+    printReceiptDocument({
+      shop,
+      type,
+      layout,
+      data: { ...repair, _customer: customer, _parts: repairParts },
+    });
   }
 
   async function saveParts() {
@@ -190,7 +173,7 @@ export default function RepairDetail() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-2 flex-wrap gap-4">
         <div>
           <Link
             to="/repairs"
@@ -280,7 +263,7 @@ export default function RepairDetail() {
               <div className="flex justify-between items-center">
                 <dt className="text-gray-500 text-sm">Labor</dt>
                 {repair.status !== 'Delivered' ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <input
                       type="number"
                       value={laborCost}
@@ -303,7 +286,7 @@ export default function RepairDetail() {
 
               <div className="flex justify-between items-center">
                 {repair.status !== 'Delivered' ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <input
                       type="text"
                       value={extraCostLabel}
@@ -466,20 +449,20 @@ export default function RepairDetail() {
             </h3>
             <div className="space-y-2">
               {repair.status === 'Pending' && (
-                <button
-                  onClick={() => printReceipt('initial')}
-                  className="w-full px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
-                >
-                  Print Initial Receipt (Job Received)
-                </button>
+                <PrintReceiptButton
+                  label="Print Initial Receipt (Job Received)"
+                  variant="muted"
+                  fullWidth
+                  onPrint={(layout) => printReceipt('initial', layout)}
+                />
               )}
               {repair.status === 'Delivered' && (
-                <button
-                  onClick={() => printReceipt('final')}
-                  className="w-full px-4 py-2.5 text-sm font-medium text-gray-700 bg-green-50 rounded-lg hover:bg-green-100"
-                >
-                  Print Final Receipt (Delivery + Payment)
-                </button>
+                <PrintReceiptButton
+                  label="Print Final Receipt (Delivery + Payment)"
+                  variant="success"
+                  fullWidth
+                  onPrint={(layout) => printReceipt('final', layout)}
+                />
               )}
 
               {(repair.status === 'Pending' || repair.status === 'Delivered') && (

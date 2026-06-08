@@ -138,7 +138,8 @@ function toSettings(row) {
     shopPhone: row.shop_phone,
     shopAddress: row.shop_address,
     shopLogo: row.shop_logo || '',
-    currency: row.currency || 'PKR',
+    shopHours: row.shop_hours || '',
+    currency: row.currency || 'EUR',
     lastRepairSeq: Number(row.last_repair_seq),
     lastRepairDate: row.last_repair_date,
     lastSaleSeq: Number(row.last_sale_seq),
@@ -152,7 +153,8 @@ function fromSettings(obj) {
     shop_phone: obj.shopPhone,
     shop_address: obj.shopAddress,
     shop_logo: obj.shopLogo || null,
-    currency: obj.currency || 'PKR',
+    shop_hours: obj.shopHours || '',
+    currency: obj.currency || 'EUR',
     last_repair_seq: obj.lastRepairSeq,
     last_repair_date: obj.lastRepairDate,
     last_sale_seq: obj.lastSaleSeq,
@@ -598,7 +600,7 @@ export async function getSettings() {
   if (!data) {
     const { data: inserted, error: insertError } = await supabase
       .from('settings')
-      .insert({ id: 1, shop_name: 'My Shop', currency: 'PKR' })
+      .insert({ id: 1, shop_name: 'My Shop', currency: 'EUR' })
       .select()
       .single();
     if (insertError) throw new Error(insertError.message);

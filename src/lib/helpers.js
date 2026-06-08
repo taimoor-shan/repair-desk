@@ -26,7 +26,7 @@ const CURRENCY_DECIMALS = {
   PKR: 0,
 };
 
-let _currencyCode = 'PKR';
+let _currencyCode = 'EUR';
 
 export function setCurrency(code) {
   if (CURRENCY_LOCALE_MAP[code]) {
@@ -41,7 +41,7 @@ export function getCurrency() {
 export function formatCurrency(amount, currencyCode) {
   if (amount == null) return '—';
   const code = currencyCode || _currencyCode;
-  const locale = CURRENCY_LOCALE_MAP[code] || 'en-PK';
+  const locale = CURRENCY_LOCALE_MAP[code] || 'en-IE';
   const decimals = code in CURRENCY_DECIMALS ? CURRENCY_DECIMALS[code] : 2;
   return new Intl.NumberFormat(locale, {
     style: 'currency',

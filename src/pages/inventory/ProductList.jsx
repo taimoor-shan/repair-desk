@@ -108,7 +108,7 @@ export default function ProductList() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-2">
         <h2 className="text-2xl font-bold text-gray-900">Inventory</h2>
         <div className="flex gap-2">
           <Link

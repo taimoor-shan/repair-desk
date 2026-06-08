@@ -80,7 +80,7 @@ export default function SaleList() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-2">
         <h2 className="text-2xl font-bold text-gray-900">Sales</h2>
         <Link
           to="/sales/new"
@@ -124,7 +124,7 @@ export default function SaleList() {
               renderItem={(s) => {
                 const cust = customers[s.customerId];
                 return (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium text-blue-600">{s.receiptNumber}</span>
                     <span className="text-gray-600">
                       {cust?.name || 'Walk-in'}

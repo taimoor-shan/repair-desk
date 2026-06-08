@@ -14,6 +14,24 @@ db.version(3).stores({
   stockPurchases: '++id, productId, date',
 });
 
+// v4 — add shopHours to settings
+db.version(4).stores({
+  customers:      '++id, &phone, name',
+  products:       '++id, name, category, stock',
+  repairJobs:     '++id, customerId, deviceId, status, receivedAt',
+  sales:          '++id, customerId, saleType, createdAt',
+  settings:       'id',
+  devices:        '++id, customerId, imei',
+  repairParts:    '++id, repairJobId, productId',
+  expenses:       '++id, date, category',
+  stockPurchases: '++id, productId, date',
+}).upgrade(async (tx) => {
+  const s = await tx.table('settings').get(1);
+  if (s && s.shopHours === undefined) {
+    await tx.table('settings').update(1, { shopHours: '' });
+  }
+});
+
 // --- Customers ---
 
 export async function getCustomers() {
@@ -225,7 +243,8 @@ export async function getSettings() {
       shopPhone: '',
       shopAddress: '',
       shopLogo: '',
-      currency: 'PKR',
+      shopHours: '',
+      currency: 'EUR',
       lastRepairSeq: 0,
       lastRepairDate: '',
       lastSaleSeq: 0,

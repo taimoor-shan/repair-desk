@@ -12,7 +12,8 @@ export default function Settings() {
     shopPhone: '',
     shopAddress: '',
     shopLogo: '',
-    currency: 'PKR',
+    shopHours: '',
+    currency: 'EUR',
   });
   const { signOut } = useAuth();
   const addToast = useToast();
@@ -27,7 +28,8 @@ export default function Settings() {
         shopPhone: s.shopPhone || '',
         shopAddress: s.shopAddress || '',
         shopLogo: s.shopLogo || '',
-        currency: s.currency || 'PKR',
+        shopHours: s.shopHours || '',
+        currency: s.currency || 'EUR',
       })
     );
   }, []);
@@ -75,13 +77,14 @@ export default function Settings() {
     try {
       await importJSON(file);
       const s = await getSettings();
-      setCurrency(s.currency || 'PKR');
+      setCurrency(s.currency || 'EUR');
       setForm({
         shopName: s.shopName || '',
         shopPhone: s.shopPhone || '',
         shopAddress: s.shopAddress || '',
         shopLogo: s.shopLogo || '',
-        currency: s.currency || 'PKR',
+        shopHours: s.shopHours || '',
+        currency: s.currency || 'EUR',
       });
       addToast('Data imported successfully');
     } catch {
@@ -185,6 +188,18 @@ export default function Settings() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
+              Opening Hours
+            </label>
+            <input
+              type="text"
+              value={form.shopHours}
+              onChange={(e) => setForm({ ...form, shopHours: e.target.value })}
+              placeholder="e.g. Mon–Sat 9:00 AM – 7:00 PM"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Currency
             </label>
             <select
@@ -192,9 +207,9 @@ export default function Settings() {
               onChange={(e) => setForm({ ...form, currency: e.target.value })}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
+              <option value="EUR">EUR — Euro</option>
               <option value="PKR">PKR — Pakistani Rupee</option>
               <option value="USD">USD — US Dollar</option>
-              <option value="EUR">EUR — Euro</option>
               <option value="GBP">GBP — British Pound</option>
               <option value="INR">INR — Indian Rupee</option>
               <option value="AED">AED — UAE Dirham</option>

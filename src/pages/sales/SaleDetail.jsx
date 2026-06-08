@@ -4,10 +4,10 @@ import { getSale, getCustomer, getSettings, deleteSale } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
-import PrintReceipt from '../../components/PrintReceipt';
+import PrintReceiptButton from '../../components/PrintReceiptButton';
 import WhatsAppButton from '../../components/WhatsAppButton';
 import { formatSaleReceiptText } from '../../lib/whatsapp';
-import ReactDOM from 'react-dom/client';
+import { printReceiptDocument } from '../../lib/printReceipt';
 
 export default function SaleDetail() {
   const { id } = useParams();
@@ -41,31 +41,14 @@ export default function SaleDetail() {
     getSettings().then(setShop);
   }, [id, navigate]);
 
-  function handlePrint() {
+  function handlePrint(layout = 'a4') {
     if (!sale) return;
-    const win = window.open('', '_blank', 'width=400,height=600');
-    if (!win) return;
-    const doc = win.document;
-    doc.write(
-      '<!DOCTYPE html><html><head><title>Receipt</title><style>' +
-        'body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; }' +
-        '@media print { body { margin: 0; padding: 0; } }' +
-        '</style></head><body><div id="print-root"></div></body></html>'
-    );
-    doc.close();
-
-    const root = ReactDOM.createRoot(doc.getElementById('print-root'));
-    root.render(
-      <PrintReceipt
-        shop={shop}
-        type="sale"
-        data={{ ...sale, _customer: customer }}
-      />
-    );
-
-    setTimeout(() => {
-      win.print();
-    }, 300);
+    printReceiptDocument({
+      shop,
+      type: 'sale',
+      layout,
+      data: { ...sale, _customer: customer },
+    });
   }
 
   if (!sale) return null;
@@ -74,7 +57,7 @@ export default function SaleDetail() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-2">
         <div>
           <Link
             to="/sales"
@@ -86,7 +69,7 @@ export default function SaleDetail() {
             Sale {sale.receiptNumber}
           </h2>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             to={`/sales/${sale.id}/edit`}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -99,12 +82,7 @@ export default function SaleDetail() {
           >
             Delete
           </button>
-          <button
-            onClick={handlePrint}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-          >
-            Print Receipt
-          </button>
+          <PrintReceiptButton onPrint={handlePrint} />
           <WhatsAppButton
             phone={customer?.phone}
             text={formatSaleReceiptText(shop, sale, customer)}

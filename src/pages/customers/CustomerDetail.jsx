@@ -34,7 +34,7 @@ export default function CustomerDetail() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between mb-6 gap-2">
         <div>
           <Link
             to="/customers"
