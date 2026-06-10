@@ -19,7 +19,7 @@ const VARIANTS = {
 };
 
 export default function PrintReceiptButton({
-  label = 'Print Receipt',
+  label = 'Print 2 Copies (A4)',
   onPrint,
   variant = 'default',
   fullWidth = false,

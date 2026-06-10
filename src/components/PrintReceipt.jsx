@@ -31,8 +31,8 @@ function getPrintStyles(layout) {
       .print-area--a4 .receipt-footer { font-size: 13px !important; }
       .print-area--a4 .receipt-terms { font-size: 11px !important; }
       .print-area--a4 .receipt-logo {
-        max-height: 80px !important;
-        max-width: 280px !important;
+        max-height: 60px !important;
+        max-width: 200px !important;
       }
       .print-area--a4 .receipt-meta-label { min-width: 72px !important; }
     }

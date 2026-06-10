@@ -450,7 +450,7 @@ export default function RepairDetail() {
             <div className="space-y-2">
               {repair.status === 'Pending' && (
                 <PrintReceiptButton
-                  label="Print Initial Receipt (Job Received)"
+                  label="Print Initial Receipt (2 Copies, A4)"
                   variant="muted"
                   fullWidth
                   onPrint={(layout) => printReceipt('initial', layout)}
@@ -458,7 +458,7 @@ export default function RepairDetail() {
               )}
               {repair.status === 'Delivered' && (
                 <PrintReceiptButton
-                  label="Print Final Receipt (Delivery + Payment)"
+                  label="Print Final Receipt (2 Copies, A4)"
                   variant="success"
                   fullWidth
                   onPrint={(layout) => printReceipt('final', layout)}
