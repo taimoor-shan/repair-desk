@@ -138,6 +138,14 @@ function Layout() {
             }
           />
           <Route
+            path="/repairs/:id/edit"
+            element={
+              <ProtectedRoute>
+                <RepairForm />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/repairs/:id"
             element={
               <ProtectedRoute>

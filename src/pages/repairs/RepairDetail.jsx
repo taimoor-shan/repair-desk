@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getRepairJob, updateRepairJob, getRepairParts, addRepairParts, deleteRepairParts, getCustomer, getSettings } from '../../lib/api';
+import { getRepairJob, updateRepairJob, deleteRepairJob, getRepairParts, addRepairParts, deleteRepairParts, getCustomer, getSettings } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -118,6 +118,22 @@ export default function RepairDetail() {
     }
   }
 
+  async function handleDelete() {
+    const ok = await confirm(
+      'Delete Repair',
+      `Delete repair "${repair.receiptNumber}"? All parts will be returned to inventory. This cannot be undone.`,
+      { confirmLabel: 'Delete', confirmVariant: 'red' }
+    );
+    if (!ok) return;
+    try {
+      await deleteRepairJob(id);
+      addToast(`Repair "${repair.receiptNumber}" deleted — parts returned to inventory`);
+      navigate('/repairs');
+    } catch (err) {
+      addToast(err.message || 'Unable to delete repair', 'error');
+    }
+  }
+
   if (!repair) return null;
 
   const nextStatus =
@@ -152,7 +168,17 @@ export default function RepairDetail() {
             Repair {repair.receiptNumber}
           </h2>
         </div>
-        <StatusBadge status={repair.status} />
+        <div className="flex items-center gap-2">
+          {repair.status !== 'Delivered' && (
+            <Link
+              to={`/repairs/${repair.id}/edit`}
+              className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              Edit Details
+            </Link>
+          )}
+          <StatusBadge status={repair.status} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -407,6 +433,22 @@ export default function RepairDetail() {
                 )}
               </>
             )}
+          </div>
+
+          {/* Delete Repair */}
+          <div className="bg-white rounded-xl shadow-sm border border-red-200 p-6">
+            <h3 className="text-lg font-semibold text-red-700 mb-2">
+              Danger Zone
+            </h3>
+            <p className="text-sm text-gray-500 mb-3">
+              Deleting this repair will return all used parts to inventory. This cannot be undone.
+            </p>
+            <button
+              onClick={handleDelete}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700"
+            >
+              Delete Repair
+            </button>
           </div>
 
           {/* Print Receipts */}

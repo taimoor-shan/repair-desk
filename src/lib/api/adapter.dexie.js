@@ -431,7 +431,14 @@ export async function updateRepairJob(id, data) {
 }
 
 export async function deleteRepairJob(id) {
-  return db.repairJobs.delete(Number(id));
+  return db.transaction('rw', db.products, db.stockPurchases, db.repairParts, db.repairJobs, async () => {
+    const parts = await db.repairParts.where('repairJobId').equals(Number(id)).toArray();
+    for (const part of parts) {
+      await restoreInventory(part);
+    }
+    await db.repairParts.where('repairJobId').equals(Number(id)).delete();
+    return db.repairJobs.delete(Number(id));
+  });
 }
 
 export async function getRepairJobsByCustomer(customerId) {

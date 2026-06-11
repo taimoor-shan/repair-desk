@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { addRepairJob, addDevice, updateDevice, getDeviceByIMEI, getCustomer } from '../../lib/api';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams, Link } from 'react-router-dom';
+import { addRepairJob, updateRepairJob, getRepairJob, addDevice, updateDevice, getDeviceByIMEI, getCustomer } from '../../lib/api';
 import { generateRepairNumber } from '../../lib/receiptNumber';
 import { useToast } from '../../context/ToastContext';
 import CustomerPicker from '../../components/CustomerPicker';
@@ -18,12 +18,55 @@ const initial = {
 };
 
 export default function RepairForm() {
+  const { id } = useParams();
+  const isEdit = Boolean(id);
   const navigate = useNavigate();
   const addToast = useToast();
   const [form, setForm] = useState(initial);
   const [errors, setErrors] = useState({});
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [imeiWarning, setImeiWarning] = useState(null);
+  const [loading, setLoading] = useState(isEdit);
+
+  // Load existing repair for edit mode
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    getRepairJob(id).then((r) => {
+      if (!r || cancelled) return;
+      setForm({
+        customerId: r.customerId ?? null,
+        mobileBrand: r.mobileBrand || '',
+        mobileModel: r.mobileModel || '',
+        imei: r.imei || '',
+        color: r.color || '',
+        phonePassword: r.phonePassword || '',
+        problemDescription: r.problemDescription || '',
+        repairNotes: r.repairNotes || '',
+      });
+      if (r.imei) {
+        getDeviceByIMEI(r.imei).then((d) => {
+          if (d && d.customerId === r.customerId) setSelectedDevice(d);
+        });
+      }
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <div className="flex items-center gap-3 text-gray-400 text-sm">
+          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Loading repair...
+        </div>
+      </div>
+    );
+  }
 
   function validate() {
     const e = {};
@@ -65,6 +108,23 @@ export default function RepairForm() {
     ev.preventDefault();
     if (!validate()) return;
 
+    if (isEdit) {
+      // Edit mode — only update fields that are editable
+      await updateRepairJob(Number(id), {
+        mobileBrand: form.mobileBrand.trim(),
+        mobileModel: form.mobileModel.trim(),
+        imei: form.imei.trim() || null,
+        color: form.color.trim() || null,
+        phonePassword: form.phonePassword || null,
+        problemDescription: form.problemDescription.trim(),
+        repairNotes: form.repairNotes.trim() || null,
+      });
+      addToast('Repair updated');
+      navigate(`/repairs/${id}`);
+      return;
+    }
+
+    // Create mode
     // Upsert device
     let deviceId = null;
     if (selectedDevice) {
@@ -107,48 +167,63 @@ export default function RepairForm() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">New Repair</h2>
+      <h2 className="text-2xl font-bold text-gray-900 mb-6">
+        {isEdit ? 'Edit Repair' : 'New Repair'}
+      </h2>
       <div className="max-w-lg bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Customer
-            </label>
-            <CustomerPicker
-              value={form.customerId}
-              onChange={(id) => {
-                update('customerId', id);
-                setSelectedDevice(null);
-                setImeiWarning(null);
-              }}
-            />
-          </div>
+          {isEdit ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Customer
+              </label>
+              <p className="text-sm text-gray-900 py-2">
+                {form.customerId ? `Customer #${form.customerId}` : 'Walk-in'}
+              </p>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Customer
+                </label>
+                <CustomerPicker
+                  value={form.customerId}
+                  onChange={(id) => {
+                    update('customerId', id);
+                    setSelectedDevice(null);
+                    setImeiWarning(null);
+                  }}
+                />
+              </div>
 
-          {form.customerId && (
-            <DevicePicker
-              customerId={form.customerId}
-              selectedDevice={selectedDevice}
-              onDeviceSelect={(device) => {
-                setSelectedDevice(device);
-                if (device) {
-                  setForm((prev) => ({
-                    ...prev,
-                    mobileBrand: device.brand,
-                    mobileModel: device.model,
-                    imei: device.imei || '',
-                    color: device.color || '',
-                  }));
-                } else {
-                  setForm((prev) => ({
-                    ...prev,
-                    mobileBrand: '',
-                    mobileModel: '',
-                    imei: '',
-                    color: '',
-                  }));
-                }
-              }}
-            />
+              {form.customerId && (
+                <DevicePicker
+                  customerId={form.customerId}
+                  selectedDevice={selectedDevice}
+                  onDeviceSelect={(device) => {
+                    setSelectedDevice(device);
+                    if (device) {
+                      setForm((prev) => ({
+                        ...prev,
+                        mobileBrand: device.brand,
+                        mobileModel: device.model,
+                        imei: device.imei || '',
+                        color: device.color || '',
+                      }));
+                    } else {
+                      setForm((prev) => ({
+                        ...prev,
+                        mobileBrand: '',
+                        mobileModel: '',
+                        imei: '',
+                        color: '',
+                      }));
+                    }
+                  }}
+                />
+              )}
+            </>
           )}
 
           <div className="grid grid-cols-2 gap-4">
@@ -283,7 +358,7 @@ export default function RepairForm() {
               type="submit"
               className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
             >
-              Create Repair
+{isEdit ? 'Save Changes' : 'Create Repair'}
             </button>
             <button
               type="button"

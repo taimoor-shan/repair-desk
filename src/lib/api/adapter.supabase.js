@@ -638,6 +638,17 @@ export async function updateRepairJob(id, data) {
 }
 
 export async function deleteRepairJob(id) {
+  const parts = await getRepairParts(id);
+  for (const part of parts) {
+    await restoreInventory(part);
+  }
+  if (parts.length > 0) {
+    const { error: partsErr } = await supabase
+      .from('repair_parts')
+      .delete()
+      .eq('repair_job_id', id);
+    if (partsErr) throw new Error(partsErr.message);
+  }
   const { error } = await supabase.from('repair_jobs').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
