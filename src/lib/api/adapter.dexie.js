@@ -144,8 +144,33 @@ db.version(7).stores({
         supplier: null,
         note: 'Opening balance reconciliation',
         date: new Date().toISOString().slice(0, 10),
-        cashOutflow: false,
+        cashOutflow: true,
         createdAt: new Date().toISOString(),
+      });
+    }
+  }
+});
+
+// v8 - fix: opening-balance reconciliation entries should count as cash outflow
+db.version(8).stores({
+  customers:      '++id, &phone, name',
+  products:       '++id, &sku, name, category, stock',
+  repairJobs:     '++id, customerId, deviceId, status, receivedAt',
+  sales:          '++id, customerId, saleType, createdAt',
+  settings:       'id',
+  devices:        '++id, customerId, imei',
+  repairParts:    '++id, repairJobId, productId',
+  expenses:       '++id, date, category',
+  stockPurchases: '++id, productId, date',
+}).upgrade(async (tx) => {
+  const purchases = await tx.table('stockPurchases').toArray();
+  for (const purchase of purchases) {
+    if (
+      purchase.note === 'Opening balance reconciliation' &&
+      purchase.cashOutflow === false
+    ) {
+      await tx.table('stockPurchases').update(purchase.id, {
+        cashOutflow: true,
       });
     }
   }
@@ -199,7 +224,7 @@ async function ensureCostLayersForProduct(product) {
     supplier: null,
     note: 'Opening balance reconciliation',
     date: new Date().toISOString().slice(0, 10),
-    cashOutflow: false,
+    cashOutflow: true,
     createdAt: new Date().toISOString(),
   });
 }

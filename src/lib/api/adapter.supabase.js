@@ -325,7 +325,7 @@ async function ensureCostLayersForProduct(product) {
     supplier: null,
     note: 'Opening balance reconciliation',
     date: new Date().toISOString().slice(0, 10),
-    cashOutflow: false,
+    cashOutflow: true,
   }));
   if (insertError) throw new Error(insertError.message);
 }
