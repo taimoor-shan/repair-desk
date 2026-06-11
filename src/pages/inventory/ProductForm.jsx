@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getProduct, addProduct, updateProduct } from '../../lib/api';
+import { getProduct, getProductBySku, addProductWithInitialStock, updateProduct } from '../../lib/api';
 import { useToast } from '../../context/ToastContext';
 
 const initial = {
@@ -36,6 +36,7 @@ export default function ProductForm() {
   function validate() {
     const e = {};
     if (!form.name.trim()) e.name = 'Product name is required';
+    if (!form.sku.trim()) e.sku = 'SKU is required';
     if (!form.category) e.category = 'Category is required';
     if (!form.sellingPrice || Number(form.sellingPrice) < 0)
       e.sellingPrice = 'Valid selling price is required';
@@ -47,8 +48,20 @@ export default function ProductForm() {
     ev.preventDefault();
     if (!validate()) return;
 
+    // Check SKU uniqueness
+    const trimmedSku = form.sku.trim();
+    if (trimmedSku) {
+      const existing = await getProductBySku(trimmedSku);
+      if (existing && (!isEdit || existing.id !== Number(id))) {
+        setErrors((prev) => ({ ...prev, sku: 'A product with this SKU already exists' }));
+        return;
+      }
+    }
+
     const data = {
       ...form,
+      name: form.name.trim(),
+      sku: trimmedSku,
       stock: Number(form.stock) || 0,
       costPrice: Number(form.costPrice) || 0,
       sellingPrice: Number(form.sellingPrice) || 0,
@@ -59,7 +72,7 @@ export default function ProductForm() {
       await updateProduct(id, data);
       addToast('Product updated');
     } else {
-      await addProduct(data);
+      await addProductWithInitialStock(data);
       addToast('Product added');
     }
     navigate('/inventory');
@@ -113,14 +126,19 @@ export default function ProductForm() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              SKU
+              SKU *
             </label>
             <input
               type="text"
               value={form.sku}
               onChange={(e) => update('sku', e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                errors.sku ? 'border-red-300' : 'border-gray-300'
+              }`}
             />
+            {errors.sku && (
+              <p className="mt-1 text-xs text-red-600">{errors.sku}</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

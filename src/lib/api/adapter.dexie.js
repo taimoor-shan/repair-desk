@@ -32,6 +32,53 @@ db.version(4).stores({
   }
 });
 
+// v5 — unique SKU index on products (may be broken for some users with empty SKUs)
+// v6 — fixed upgrade: normalizes empty strings + deduplicates before applying &sku
+db.version(6).stores({
+  customers:      '++id, &phone, name',
+  products:       '++id, &sku, name, category, stock',
+  repairJobs:     '++id, customerId, deviceId, status, receivedAt',
+  sales:          '++id, customerId, saleType, createdAt',
+  settings:       'id',
+  devices:        '++id, customerId, imei',
+  repairParts:    '++id, repairJobId, productId',
+  expenses:       '++id, date, category',
+  stockPurchases: '++id, productId, date',
+}).upgrade(async (tx) => {
+  // Fetch all existing products
+  const products = await tx.table('products').orderBy('id').toArray();
+
+  // Normalize every product's SKU: empty string → undefined, trim whitespace
+  for (const p of products) {
+    const raw = p.sku;
+    if (raw === '' || raw === null) {
+      await tx.table('products').update(p.id, { sku: undefined });
+    } else if (typeof raw === 'string' && raw !== raw.trim()) {
+      await tx.table('products').update(p.id, { sku: raw.trim() });
+    }
+  }
+
+  // Deduplicate non-empty SKUs — keep first by ID, append "-DUP-N" to rest
+  const seen = new Set();
+  for (const p of products) {
+    const sku = p.sku && typeof p.sku === 'string' ? p.sku.trim() : '';
+    if (!sku) continue;
+
+    if (seen.has(sku)) {
+      let suffix = 2;
+      let newSku;
+      do {
+        newSku = `${sku}-DUP-${suffix}`;
+        suffix++;
+      } while (seen.has(newSku));
+      await tx.table('products').update(p.id, { sku: newSku });
+      seen.add(newSku);
+    } else {
+      seen.add(sku);
+    }
+  }
+});
+
 // --- Customers ---
 
 export async function getCustomers() {
@@ -82,8 +129,36 @@ export async function getProduct(id) {
   return db.products.get(Number(id));
 }
 
+export async function getProductBySku(sku) {
+  return db.products.where('sku').equals(sku).first();
+}
+
 export async function addProduct(product) {
   return db.products.add({ ...product, createdAt: new Date().toISOString() });
+}
+
+export async function addProductWithInitialStock(product) {
+  // Normalize empty SKU to undefined so it doesn't collide in unique index
+  if (product.sku === '') product.sku = undefined;
+
+  const productId = await addProduct(product);
+
+  // If initial stock > 0 and cost price > 0, record as purchase
+  if (product.stock > 0 && product.costPrice > 0) {
+    await db.stockPurchases.add({
+      productId,
+      productName: product.name,
+      quantity: product.stock,
+      unitCost: product.costPrice,
+      totalCost: product.stock * product.costPrice,
+      supplier: null,
+      note: 'Initial stock',
+      date: new Date().toISOString().slice(0, 10),
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  return productId;
 }
 
 export async function updateProduct(id, data) {
@@ -333,7 +408,25 @@ export async function importData(json) {
       await db.stockPurchases.clear();
 
       if (json.customers) await db.customers.bulkAdd(json.customers);
-      if (json.products) await db.products.bulkAdd(json.products);
+      if (json.products) {
+        // Normalize SKUs for import: generate for empty, deduplicate, trim
+        const seen = new Set();
+        const normalized = json.products.map((p, i) => {
+          let sku = (p.sku && typeof p.sku === 'string' ? p.sku.trim() : '');
+          // Generate a fallback SKU if empty
+          if (!sku) sku = `SKU-${String(i + 1).padStart(4, '0')}`;
+          // Deduplicate
+          if (seen.has(sku)) {
+            let suffix = 2;
+            let newSku;
+            do { newSku = `${sku}-${suffix}`; suffix++; } while (seen.has(newSku));
+            sku = newSku;
+          }
+          seen.add(sku);
+          return { ...p, sku };
+        });
+        await db.products.bulkAdd(normalized);
+      }
       if (json.repairJobs) await db.repairJobs.bulkAdd(json.repairJobs);
       if (json.sales) await db.sales.bulkAdd(json.sales);
       if (json.settings) await db.settings.bulkAdd(json.settings);

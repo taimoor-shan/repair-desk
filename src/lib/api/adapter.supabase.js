@@ -337,6 +337,16 @@ export async function getProduct(id) {
   return toProduct(data);
 }
 
+export async function getProductBySku(sku) {
+  const { data, error } = await supabase
+    .from('products')
+    .select('*')
+    .eq('sku', sku)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? toProduct(data) : null;
+}
+
 export async function addProduct(product) {
   const { data, error } = await supabase
     .from('products')
@@ -345,6 +355,32 @@ export async function addProduct(product) {
     .single();
   if (error) throw new Error(error.message);
   return toProduct(data).id;
+}
+
+export async function addProductWithInitialStock(product) {
+  // Normalize empty SKU to null so PostgreSQL UNIQUE constraint ignores it
+  if (product.sku === '') product.sku = null;
+
+  const productId = await addProduct(product);
+
+  // If initial stock > 0 and cost price > 0, record as purchase
+  if (product.stock > 0 && product.costPrice > 0) {
+    const { error } = await supabase
+      .from('stock_purchases')
+      .insert(fromStockPurchase({
+        productId,
+        productName: product.name,
+        quantity: product.stock,
+        unitCost: product.costPrice,
+        totalCost: product.stock * product.costPrice,
+        supplier: null,
+        note: 'Initial stock',
+        date: new Date().toISOString().slice(0, 10),
+      }));
+    if (error) throw new Error(error.message);
+  }
+
+  return productId;
 }
 
 export async function updateProduct(id, data) {
@@ -656,6 +692,24 @@ export async function exportData() {
 
 export async function importData(json) {
   const skipTables = ['settings'];
+
+  // Normalize product SKUs before import (same logic as Dexie adapter)
+  if (json.products?.length) {
+    const seen = new Set();
+    json.products = json.products.map((p, i) => {
+      let sku = (p.sku && typeof p.sku === 'string' ? p.sku.trim() : '');
+      if (!sku) sku = `SKU-${String(i + 1).padStart(4, '0')}`;
+      if (seen.has(sku)) {
+        let suffix = 2;
+        let newSku;
+        do { newSku = `${sku}-${suffix}`; suffix++; } while (seen.has(newSku));
+        sku = newSku;
+      }
+      seen.add(sku);
+      return { ...p, sku };
+    });
+  }
+
   for (const [table, rows] of Object.entries(json)) {
     if (skipTables.includes(table) || !rows?.length) continue;
     const { error } = await supabase.from(table).upsert(rows);

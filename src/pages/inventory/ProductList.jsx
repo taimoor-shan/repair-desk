@@ -48,7 +48,7 @@ export default function ProductList() {
       ? products
       : products.filter((p) => p.category === category);
 
-  const filtered = rankPrefixFirst(categoryFiltered, debouncedSearch, ['name']);
+  const filtered = rankPrefixFirst(categoryFiltered, debouncedSearch, ['name', 'sku']);
 
   async function handleDelete(product) {
     const ok = await confirm(
