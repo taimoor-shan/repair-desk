@@ -2,6 +2,7 @@ import { formatCurrency } from '../lib/helpers';
 
 function getPrintStyles(layout) {
   const isA4 = layout === 'a4';
+  const isStacked = layout === 'stacked';
 
   return `
     @media print {
@@ -9,8 +10,8 @@ function getPrintStyles(layout) {
       body { margin: 0; }
     }
     @page {
-      margin: ${isA4 ? '15mm' : '0'};
-      size: ${isA4 ? 'A4' : 'auto'};
+      margin: ${isStacked ? '8mm' : isA4 ? '15mm' : '0'};
+      size: ${isStacked || isA4 ? 'A4' : 'auto'};
     }
     @media print {
       .print-area--thermal {
@@ -35,6 +36,25 @@ function getPrintStyles(layout) {
         max-width: 200px !important;
       }
       .print-area--a4 .receipt-meta-label { min-width: 72px !important; }
+
+      /* Stacked two-column layout — tighter sizes */
+      .print-area--stacked {
+        max-width: none !important;
+        width: 100% !important;
+        padding: 0 !important;
+        font-size: 12px !important;
+      }
+      .print-area--stacked .receipt-shop-name { font-size: 15px !important; }
+      .print-area--stacked .receipt-sub { font-size: 11px !important; }
+      .print-area--stacked .receipt-sm { font-size: 11px !important; }
+      .print-area--stacked .receipt-total { font-size: 14px !important; }
+      .print-area--stacked .receipt-footer { font-size: 11px !important; }
+      .print-area--stacked .receipt-terms { font-size: 10px !important; }
+      .print-area--stacked .receipt-logo {
+        max-height: 52px !important;
+        max-width: 140px !important;
+      }
+      .print-area--stacked .receipt-meta-label { min-width: 58px !important; }
     }
   `;
 }
@@ -45,6 +65,8 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
   const isRepair = type === 'repair' || type === 'initial' || type === 'final';
   const isSale = type === 'sale';
   const isFinal = type === 'final';
+  const isStacked = layout === 'stacked';
+  const tableDense = isStacked && data.items?.length > 5;
 
   const s = {
     wrap: {
@@ -75,29 +97,251 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
     footer: { textAlign: 'center', marginTop: '12px', paddingTop: '8px', borderTop: '1px dashed #aaa', fontSize: '11px', color: '#777' },
   };
 
+  const wrapStyle = isStacked
+    ? { ...s.wrap, maxWidth: '100%', padding: '14px 16px', fontSize: '12px', lineHeight: '1.45' }
+    : s.wrap;
+
+  const stackedS = isStacked ? {
+    shopName: { ...s.shopName, fontSize: '15px', margin: '3px 0 4px' },
+    sub: { ...s.sub, fontSize: '11px' },
+    divider: { borderTop: '1px dashed #aaa', margin: '8px 0' },
+    row: { ...s.row, padding: '3px 0' },
+    totalRow: { ...s.totalRow, padding: '4px 0', fontSize: '14px' },
+    th: { ...s.th, paddingBottom: '3px', fontSize: '11px' },
+    thRight: { ...s.thRight, paddingBottom: '3px', fontSize: '11px' },
+    td: { ...s.td, padding: '3px 0', fontSize: tableDense ? '10px' : '11px' },
+    tdRight: { ...s.tdRight, padding: '3px 0', fontSize: tableDense ? '10px' : '11px' },
+    tdCenter: { ...s.tdCenter, padding: '3px 0', fontSize: tableDense ? '10px' : '11px' },
+    metaRow: { ...s.metaRow, gap: '8px', padding: '3px 0' },
+    metaLabel: { ...s.metaLabel, minWidth: '56px' },
+    footer: { ...s.footer, marginTop: '8px', paddingTop: '6px', fontSize: '10px' },
+    table: { ...s.table, marginBottom: '6px' },
+  } : {};
+
+  // ── Stacked two-column grid layout ──
+  if (isStacked) {
+    return (
+      <>
+        <style>{getPrintStyles(layout)}</style>
+        <div className={`print-area print-area--${layout}`} style={wrapStyle}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gridTemplateRows: 'auto auto auto',
+            gap: '16px',
+          }}>
+            {/* ── LEFT COLUMN: header*/}
+            <div style={{ gridColumn: '1', gridRow: '1' }}>
+              {/* Shop header */}
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                alignItems: 'start',
+                marginBottom: '10px',
+                paddingBottom: '8px',
+                borderBottom: '1px dashed #aaa',
+              }}>
+                {shop?.shopLogo && (
+                  <div style={{ flexShrink: 0 }}>
+                    <img
+                      src={shop.shopLogo}
+                      alt="Logo"
+                      className="receipt-logo"
+                      style={{ maxHeight: '52px', objectFit: 'contain' }}
+                    />
+                  </div>
+                )}
+                <div style={{ flex: 1, textAlign: 'left' }}>
+                  <p className="receipt-shop-name" style={stackedS.shopName}>{shop?.shopName || 'Repair Desk'}</p>
+                  {shop?.shopAddress && <p className="receipt-sub" style={stackedS.sub}>{shop.shopAddress}</p>}
+                  {shop?.shopPhone && <p className="receipt-sub" style={stackedS.sub}>{shop.shopPhone}</p>}
+                  {shop?.shopHours && <p className="receipt-sub" style={stackedS.sub}>{shop.shopHours}</p>}
+                </div>
+                
+              </div>
+            </div>
+
+            {/* ── RIGHT COLUMN: repair/sale details + receipt# + customer ──  + totals ── */}
+            <div style={{ gridColumn: '2', gridRow: '1' }}>
+                    {/* Receipt number + date */}
+              <div style={{ ...stackedS.row, marginBottom: '6px' }}>
+                <span>Receipt: <strong>{data.receiptNumber}</strong></span>
+                <span style={s.label}>{new Date().toLocaleDateString()}</span>
+              </div>
+
+              {/* Customer */}
+              {data._customer && (
+                <div style={{ marginBottom: '6px' }}>
+                  {/* <div style={stackedS.divider} /> */}
+                  <div style={stackedS.metaRow}>
+                    <span className="receipt-meta-label" style={stackedS.metaLabel}>Customer:</span>
+                    <span>{data._customer.name}</span>
+                  </div>
+                  {data._customer.phone && (
+                    <div style={stackedS.metaRow}>
+                      <span className="receipt-meta-label" style={stackedS.metaLabel}>Phone:</span>
+                      <span>{data._customer.phone}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Repair details */}
+              {isRepair && (
+                <div style={{ marginBottom: '8px' }}>
+                  {[
+                    ['Brand', data.mobileBrand],
+                    ['Model', data.mobileModel],
+                    data.imei ? ['IMEI', data.imei] : null,
+                    ['Problem', data.problemDescription],
+                    ['Status', data.status],
+                  ].filter(Boolean).map(([label, value]) => (
+                    <div key={label} style={stackedS.metaRow}>
+                      <span className="receipt-meta-label" style={stackedS.metaLabel}>{label}:</span>
+                      <span style={{ wordBreak: 'break-word' }}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Sale items table */}
+              {isSale && data.items && (
+                <table style={stackedS.table}>
+                  <thead>
+                    <tr>
+                      <th className="receipt-sm" style={{ ...stackedS.th, width: '44%' }}>Item</th>
+                      <th className="receipt-sm" style={{ ...stackedS.th, ...stackedS.tdCenter, width: '12%' }}>Qty</th>
+                      <th className="receipt-sm" style={{ ...stackedS.thRight, width: '22%' }}>Price</th>
+                      <th className="receipt-sm" style={{ ...stackedS.thRight, width: '22%' }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.items.map((item, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
+                        <td className="receipt-sm" style={stackedS.td}>{item.productName}</td>
+                        <td className="receipt-sm" style={stackedS.tdCenter}>{item.quantity}</td>
+                        <td className="receipt-sm" style={stackedS.tdRight}>{formatCurrency(item.unitPrice)}</td>
+                        <td className="receipt-sm" style={stackedS.tdRight}>{formatCurrency(item.quantity * item.unitPrice)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+
+              {/* Totals */}
+              <div style={stackedS.divider} />
+              <div style={{ paddingTop: '6px' }}>
+                {isRepair && isFinal && (
+                  <>
+                    {data.laborCost > 0 && (
+                      <div style={stackedS.row}>
+                        <span style={s.label}>Labor</span>
+                        <span>{formatCurrency(data.laborCost)}</span>
+                      </div>
+                    )}
+                    {data.extraCost > 0 && (
+                      <div style={stackedS.row}>
+                        <span style={s.label}>{data.extraCostLabel || 'Extra Cost'}</span>
+                        <span>{formatCurrency(data.extraCost)}</span>
+                      </div>
+                    )}
+                    {data.finalCost != null && (
+                      <div className="receipt-total" style={stackedS.totalRow}>
+                        <span>Final Cost</span>
+                        <span>{formatCurrency(data.finalCost)}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+                {isSale && (
+                  <>
+                    <div style={stackedS.row}>
+                      <span style={s.label}>Subtotal</span>
+                      <span>{formatCurrency(data.totalAmount)}</span>
+                    </div>
+                    {data.discount > 0 && (
+                      <div style={stackedS.row}>
+                        <span style={s.label}>Discount</span>
+                        <span>−{formatCurrency(data.discount)}</span>
+                      </div>
+                    )}
+                    <div className="receipt-total" style={stackedS.totalRow}>
+                      <span>Total</span>
+                      <span>{formatCurrency(data.totalAmount - (data.discount || 0))}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* ── TERMS & CONDITIONS (full width, split two columns) ── */}
+            <div style={{
+              gridColumn: '1 / 3',
+              gridRow: '2',
+              borderTop: '1px dashed #aaa',
+              marginTop: '8px',
+              paddingTop: '10px',
+            }}>
+              <p style={{ fontWeight: 'bold', margin: '0 0 6px', textAlign: 'start', fontSize: '10px' }}>TERMS AND CONDITIONS</p>
+              <ol style={{
+                margin: 0,
+                paddingLeft: '14px',
+                columnCount: 2,
+                columnGap: '16px',
+                fontSize: '9px',
+                lineHeight: '1.5',
+                color: '#555',
+              }}>
+                <li>All phones to be tested and paid for at collection</li>
+                <li>We are not responsible for the loss of ANY data</li>
+                <li>It is the owner's responsibility to remove SIM and memory cards; we are not responsible for loss or damage</li>
+                <li>No warranty provided on LCDs or Touch if it has marks, scratches or cracks</li>
+                <li>We will only repair the fault booked in for</li>
+                <li>Devices to be collected within 90 days of booking. Devices left longer than 90 days will become property of Sigma Mobiles to recover costs</li>
+                <li>Please ask us for our T&Cs</li>
+              </ol>
+            </div>
+
+            {/* ── FOOTER (full width) ── */}
+            <div className="receipt-footer" style={{
+              gridColumn: '1 / 3',
+              gridRow: '3',
+              ...stackedS.footer,
+            }}>
+              <p style={{ margin: '0 0 1px' }}>Thank you for your business!</p>
+              <p style={{ margin: 0 }}>{new Date().toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── Original single-column layout (thermal / a4) ──
   return (
     <>
       <style>{getPrintStyles(layout)}</style>
       <div className={`print-area print-area--${layout}`} style={s.wrap}>
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px dashed #aaa', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection:'column', alignItems: 'start', marginBottom: '12px', paddingBottom: '10px', gap: '16px' }}>
+            {shop?.shopLogo && (
+            <div style={{ flexShrink: 0 }}>
+              <img
+                src={shop.shopLogo}
+                alt="Logo"
+                className="receipt-logo"
+                style={{ maxHeight: '46px', objectFit: 'contain' }}
+              />
+            </div>
+          )}
           <div style={{ flex: 1, textAlign: 'left' }}>
             <p className="receipt-shop-name" style={s.shopName}>{shop?.shopName || 'Repair Desk'}</p>
             {shop?.shopAddress && <p className="receipt-sub" style={s.sub}>{shop.shopAddress}</p>}
             {shop?.shopPhone && <p className="receipt-sub" style={s.sub}>{shop.shopPhone}</p>}
             {shop?.shopHours && <p className="receipt-sub" style={s.sub}>{shop.shopHours}</p>}
           </div>
-          {shop?.shopLogo && (
-            <div style={{ flexShrink: 0 }}>
-              <img
-                src={shop.shopLogo}
-                alt="Logo"
-                className="receipt-logo"
-                style={{ maxHeight: '44px', maxWidth: '120px', objectFit: 'contain' }}
-              />
-            </div>
-          )}
+        
         </div>
 
         {/* Receipt number + date */}
