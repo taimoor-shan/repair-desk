@@ -63,47 +63,59 @@ export default function ProductList() {
 
   async function handleAdjust() {
     if (adjustAmount === 0 || !adjustModal) return;
-    await adjustStock(adjustModal.id, Number(adjustAmount));
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id === adjustModal.id
-          ? { ...p, stock: Math.max(0, p.stock + Number(adjustAmount)) }
-          : p
-      )
-    );
-    addToast(`Stock adjusted — ${adjustReason}`);
-    setAdjustModal(null);
-    setAdjustAmount(0);
-    setAdjustReason('');
+    try {
+      await adjustStock(adjustModal.id, Number(adjustAmount));
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === adjustModal.id
+            ? { ...p, stock: Math.max(0, p.stock + Number(adjustAmount)) }
+            : p
+        )
+      );
+      addToast(`Stock adjusted — ${adjustReason}`);
+      setAdjustModal(null);
+      setAdjustAmount(0);
+      setAdjustReason('');
+    } catch (err) {
+      addToast(err.message || 'Unable to adjust stock', 'error');
+    }
   }
 
   async function handleRestock() {
     if (!restockModal || restockForm.quantity <= 0) return;
     const product = restockModal;
-    const unitCost = Number(restockForm.unitCost) || product.costPrice || 0;
+    const unitCost = Number(restockForm.unitCost) || 0;
+    if (unitCost <= 0) {
+      addToast('Unit cost is required for restock', 'error');
+      return;
+    }
     const totalCost = unitCost * restockForm.quantity;
 
-    await addStockPurchase({
-      productId: product.id,
-      productName: product.name,
-      quantity: restockForm.quantity,
-      unitCost,
-      totalCost,
-      supplier: restockForm.supplier || null,
-      note: restockForm.note || null,
-      date: restockForm.date,
-    });
+    try {
+      await addStockPurchase({
+        productId: product.id,
+        productName: product.name,
+        quantity: restockForm.quantity,
+        unitCost,
+        totalCost,
+        supplier: restockForm.supplier || null,
+        note: restockForm.note || null,
+        date: restockForm.date,
+      });
 
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id === product.id
-          ? { ...p, stock: p.stock + restockForm.quantity }
-          : p
-      )
-    );
-    addToast(`${restockForm.quantity} units of "${product.name}" restocked`);
-    setRestockModal(null);
-    setRestockForm(emptyRestock);
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === product.id
+            ? { ...p, stock: p.stock + restockForm.quantity, costPrice: unitCost }
+            : p
+        )
+      );
+      addToast(`${restockForm.quantity} units of "${product.name}" restocked`);
+      setRestockModal(null);
+      setRestockForm(emptyRestock);
+    } catch (err) {
+      addToast(err.message || 'Unable to restock product', 'error');
+    }
   }
 
   return (
@@ -328,7 +340,8 @@ export default function ProductList() {
                 value={adjustAmount}
                 onChange={(e) => setAdjustAmount(e.target.value)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g. +5 or -3"
+                max="-1"
+                placeholder="e.g. -3"
                 autoFocus
               />
             </div>
@@ -367,7 +380,7 @@ export default function ProductList() {
               </button>
               <button
                 onClick={handleAdjust}
-                disabled={!adjustReason || adjustAmount === 0}
+                disabled={!adjustReason || Number(adjustAmount) >= 0}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 Adjust
@@ -466,8 +479,7 @@ export default function ProductList() {
                 <p className="text-sm text-gray-500">
                   Total cost:{' '}
                   {formatCurrency(
-                    restockForm.quantity *
-                    (Number(restockForm.unitCost) || restockModal.costPrice || 0)
+                    restockForm.quantity * (Number(restockForm.unitCost) || 0)
                   )}
                 </p>
               )}
@@ -484,7 +496,7 @@ export default function ProductList() {
               </button>
               <button
                 onClick={handleRestock}
-                disabled={restockForm.quantity <= 0}
+                disabled={restockForm.quantity <= 0 || Number(restockForm.unitCost) <= 0}
                 className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50"
               >
                 Restock

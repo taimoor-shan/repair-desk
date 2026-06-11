@@ -79,6 +79,224 @@ db.version(6).stores({
   }
 });
 
+// v7 - add lightweight FIFO inventory costing fields on stock purchase rows
+db.version(7).stores({
+  customers:      '++id, &phone, name',
+  products:       '++id, &sku, name, category, stock',
+  repairJobs:     '++id, customerId, deviceId, status, receivedAt',
+  sales:          '++id, customerId, saleType, createdAt',
+  settings:       'id',
+  devices:        '++id, customerId, imei',
+  repairParts:    '++id, repairJobId, productId',
+  expenses:       '++id, date, category',
+  stockPurchases: '++id, productId, date',
+}).upgrade(async (tx) => {
+  const products = await tx.table('products').toArray();
+  const purchases = await tx.table('stockPurchases').toArray();
+
+  for (const purchase of purchases) {
+    if (purchase.remainingQuantity === undefined) {
+      await tx.table('stockPurchases').update(purchase.id, {
+        remainingQuantity: Number(purchase.quantity) || 0,
+        cashOutflow: purchase.cashOutflow !== false,
+      });
+    }
+  }
+
+  const purchasesByProduct = new Map();
+  for (const purchase of purchases) {
+    const list = purchasesByProduct.get(purchase.productId) || [];
+    list.push({
+      ...purchase,
+      remainingQuantity: purchase.remainingQuantity === undefined
+        ? Number(purchase.quantity) || 0
+        : Number(purchase.remainingQuantity) || 0,
+    });
+    purchasesByProduct.set(purchase.productId, list);
+  }
+
+  for (const product of products) {
+    const targetStock = Math.max(0, Number(product.stock) || 0);
+    const lots = (purchasesByProduct.get(product.id) || [])
+      .sort((a, b) => `${a.date || ''}:${a.id}`.localeCompare(`${b.date || ''}:${b.id}`));
+    let remainingTotal = lots.reduce((sum, lot) => sum + (Number(lot.remainingQuantity) || 0), 0);
+
+    if (remainingTotal > targetStock) {
+      let excess = remainingTotal - targetStock;
+      for (const lot of lots) {
+        if (excess <= 0) break;
+        const current = Number(lot.remainingQuantity) || 0;
+        const take = Math.min(current, excess);
+        await tx.table('stockPurchases').update(lot.id, {
+          remainingQuantity: current - take,
+        });
+        excess -= take;
+      }
+    } else if (targetStock > remainingTotal && Number(product.costPrice) > 0) {
+      const quantity = targetStock - remainingTotal;
+      await tx.table('stockPurchases').add({
+        productId: product.id,
+        productName: product.name,
+        quantity,
+        remainingQuantity: quantity,
+        unitCost: Number(product.costPrice),
+        totalCost: quantity * Number(product.costPrice),
+        supplier: null,
+        note: 'Opening balance reconciliation',
+        date: new Date().toISOString().slice(0, 10),
+        cashOutflow: false,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  }
+});
+
+function sortLots(a, b) {
+  return `${a.date || ''}:${a.id || 0}`.localeCompare(`${b.date || ''}:${b.id || 0}`);
+}
+
+function lineCost(item) {
+  const total = item.totalCost ?? item.total_cost;
+  if (total != null) return Number(total) || 0;
+  const unit = item.unitCost ?? item.unit_cost ?? item.costPrice ?? item.cost_price ?? 0;
+  const qty = item.quantity ?? 0;
+  return (Number(unit) || 0) * (Number(qty) || 0);
+}
+
+function normalizeCostedItem(item, allocation) {
+  return {
+    ...item,
+    quantity: Number(item.quantity) || 0,
+    unitCost: allocation.unitCost,
+    costPrice: allocation.unitCost,
+    totalCost: allocation.totalCost,
+    costLayers: allocation.layers,
+  };
+}
+
+async function ensureCostLayersForProduct(product) {
+  const lots = await db.stockPurchases.where('productId').equals(Number(product.id)).toArray();
+  const remainingTotal = lots.reduce(
+    (sum, lot) => sum + (Number(lot.remainingQuantity ?? lot.quantity) || 0),
+    0
+  );
+  const stock = Math.max(0, Number(product.stock) || 0);
+  if (remainingTotal >= stock) return;
+
+  const cost = Number(product.costPrice) || 0;
+  if (cost <= 0) {
+    throw new Error(`Set a cost price for "${product.name}" before selling or using stock.`);
+  }
+
+  const quantity = stock - remainingTotal;
+  await db.stockPurchases.add({
+    productId: product.id,
+    productName: product.name,
+    quantity,
+    remainingQuantity: quantity,
+    unitCost: cost,
+    totalCost: quantity * cost,
+    supplier: null,
+    note: 'Opening balance reconciliation',
+    date: new Date().toISOString().slice(0, 10),
+    cashOutflow: false,
+    createdAt: new Date().toISOString(),
+  });
+}
+
+async function consumeInventory(productId, quantity) {
+  const qty = Number(quantity) || 0;
+  if (qty <= 0) throw new Error('Quantity must be greater than zero.');
+
+  const product = await db.products.get(Number(productId));
+  if (!product) throw new Error('Product not found.');
+  if ((Number(product.stock) || 0) < qty) {
+    throw new Error(`Only ${product.stock || 0} in stock for "${product.name}".`);
+  }
+
+  await ensureCostLayersForProduct(product);
+
+  const lots = (await db.stockPurchases.where('productId').equals(Number(productId)).toArray())
+    .filter((lot) => (Number(lot.remainingQuantity ?? lot.quantity) || 0) > 0)
+    .sort(sortLots);
+
+  let remaining = qty;
+  let totalCost = 0;
+  const layers = [];
+
+  for (const lot of lots) {
+    if (remaining <= 0) break;
+    const lotRemaining = Number(lot.remainingQuantity ?? lot.quantity) || 0;
+    const take = Math.min(lotRemaining, remaining);
+    if (take <= 0) continue;
+
+    const unitCost = Number(lot.unitCost) || 0;
+    await db.stockPurchases.update(lot.id, {
+      remainingQuantity: lotRemaining - take,
+    });
+
+    layers.push({ purchaseId: lot.id, quantity: take, unitCost });
+    totalCost += take * unitCost;
+    remaining -= take;
+  }
+
+  if (remaining > 0) {
+    throw new Error(`Not enough costed stock for "${product.name}". Add a purchase with unit cost first.`);
+  }
+
+  await db.products.update(Number(productId), {
+    stock: (Number(product.stock) || 0) - qty,
+  });
+
+  return {
+    layers,
+    totalCost,
+    unitCost: qty > 0 ? totalCost / qty : 0,
+  };
+}
+
+async function restoreInventory(item) {
+  const qty = Number(item.quantity) || 0;
+  if (qty <= 0) return;
+
+  const product = await db.products.get(Number(item.productId));
+  if (product) {
+    await db.products.update(Number(item.productId), {
+      stock: (Number(product.stock) || 0) + qty,
+    });
+  }
+
+  if (Array.isArray(item.costLayers) && item.costLayers.length > 0) {
+    for (const layer of item.costLayers) {
+      const purchase = await db.stockPurchases.get(Number(layer.purchaseId));
+      if (!purchase) continue;
+      await db.stockPurchases.update(Number(layer.purchaseId), {
+        remainingQuantity:
+          (Number(purchase.remainingQuantity ?? purchase.quantity) || 0) +
+          (Number(layer.quantity) || 0),
+      });
+    }
+    return;
+  }
+
+  const unitCost = Number(item.unitCost ?? item.costPrice ?? product?.costPrice) || 0;
+  if (unitCost > 0) {
+    await db.stockPurchases.add({
+      productId: item.productId,
+      productName: item.productName || product?.name || 'Restored item',
+      quantity: qty,
+      remainingQuantity: qty,
+      unitCost,
+      totalCost: qty * unitCost,
+      supplier: null,
+      note: 'Legacy stock return',
+      date: new Date().toISOString().slice(0, 10),
+      cashOutflow: false,
+      createdAt: new Date().toISOString(),
+    });
+  }
+}
+
 // --- Customers ---
 
 export async function getCustomers() {
@@ -143,17 +361,21 @@ export async function addProductWithInitialStock(product) {
 
   const productId = await addProduct(product);
 
-  // If initial stock > 0 and cost price > 0, record as purchase
-  if (product.stock > 0 && product.costPrice > 0) {
+  if (product.stock > 0) {
+    if (!(Number(product.costPrice) > 0)) {
+      throw new Error('Cost price is required when adding opening stock.');
+    }
     await db.stockPurchases.add({
       productId,
       productName: product.name,
       quantity: product.stock,
+      remainingQuantity: product.stock,
       unitCost: product.costPrice,
       totalCost: product.stock * product.costPrice,
       supplier: null,
       note: 'Initial stock',
       date: new Date().toISOString().slice(0, 10),
+      cashOutflow: true,
       createdAt: new Date().toISOString(),
     });
   }
@@ -170,10 +392,24 @@ export async function deleteProduct(id) {
 }
 
 export async function adjustStock(id, delta) {
-  const product = await db.products.get(Number(id));
-  if (!product) return;
-  const newStock = Math.max(0, product.stock + delta);
-  return db.products.update(Number(id), { stock: newStock });
+  const amount = Number(delta) || 0;
+  if (amount === 0) return;
+  if (amount > 0) {
+    throw new Error('Use Restock or New Purchase to increase stock with a unit cost.');
+  }
+
+  return db.transaction('rw', db.products, db.stockPurchases, db.expenses, async () => {
+    const product = await db.products.get(Number(id));
+    if (!product) return;
+    const allocation = await consumeInventory(id, Math.abs(amount));
+    await db.expenses.add({
+      category: 'Inventory Adjustment',
+      amount: allocation.totalCost,
+      note: `Stock decreased: ${product.name}`,
+      date: new Date().toISOString().slice(0, 10),
+      createdAt: new Date().toISOString(),
+    });
+  });
 }
 
 // --- Repair Jobs ---
@@ -249,26 +485,45 @@ export async function getSale(id) {
 }
 
 export async function addSale(sale) {
-  return db.sales.add(sale);
+  return db.transaction('rw', db.products, db.stockPurchases, db.sales, async () => {
+    const items = [];
+    for (const item of sale.items || []) {
+      const allocation = await consumeInventory(item.productId, item.quantity);
+      items.push(normalizeCostedItem(item, allocation));
+    }
+    return db.sales.add({ ...sale, items });
+  });
 }
 
 export async function updateSale(id, data) {
-  return db.sales.update(Number(id), data);
+  return db.transaction('rw', db.products, db.stockPurchases, db.sales, async () => {
+    const existing = await db.sales.get(Number(id));
+    if (existing?.items?.length) {
+      for (const item of existing.items) {
+        await restoreInventory(item);
+      }
+    }
+
+    const items = [];
+    for (const item of data.items || []) {
+      const allocation = await consumeInventory(item.productId, item.quantity);
+      items.push(normalizeCostedItem(item, allocation));
+    }
+
+    return db.sales.update(Number(id), { ...data, items });
+  });
 }
 
 export async function deleteSale(id) {
-  const sale = await db.sales.get(Number(id));
-  if (sale?.items?.length) {
-    for (const item of sale.items) {
-      const product = await db.products.get(Number(item.productId));
-      if (product) {
-        await db.products.update(Number(item.productId), {
-          stock: (product.stock || 0) + item.quantity,
-        });
+  return db.transaction('rw', db.products, db.stockPurchases, db.sales, async () => {
+    const sale = await db.sales.get(Number(id));
+    if (sale?.items?.length) {
+      for (const item of sale.items) {
+        await restoreInventory(item);
       }
     }
-  }
-  return db.sales.delete(Number(id));
+    return db.sales.delete(Number(id));
+  });
 }
 
 export async function getSalesByCustomer(customerId) {
@@ -407,33 +662,159 @@ export async function importData(json) {
       await db.expenses.clear();
       await db.stockPurchases.clear();
 
-      if (json.customers) await db.customers.bulkAdd(json.customers);
+      if (json.customers) {
+        const rows = json.customers.map((c) => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone,
+          address: c.address,
+          email: c.email,
+          createdAt: c.createdAt || c.created_at || new Date().toISOString(),
+          updatedAt: c.updatedAt || c.updated_at || new Date().toISOString(),
+        }));
+        await db.customers.bulkAdd(rows);
+      }
       if (json.products) {
-        // Normalize SKUs for import: generate for empty, deduplicate, trim
+        // Normalize SKUs and auto-map snake_case → camelCase from Supabase exports
         const seen = new Set();
         const normalized = json.products.map((p, i) => {
-          let sku = (p.sku && typeof p.sku === 'string' ? p.sku.trim() : '');
+          // Auto-detect snake_case Supabase export and convert field names
+          const product = {
+            id: p.id,
+            name: p.name,
+            category: p.category,
+            sku: (p.sku && typeof p.sku === 'string' ? p.sku.trim() : ''),
+            stock: Number(p.stock ?? 0),
+            costPrice: p.costPrice != null ? Number(p.costPrice) : (p.cost_price != null ? Number(p.cost_price) : null),
+            sellingPrice: p.sellingPrice != null ? Number(p.sellingPrice) : (p.selling_price != null ? Number(p.selling_price) : null),
+            lowStockThreshold: Number(p.lowStockThreshold ?? p.low_stock_threshold ?? 0),
+            createdAt: p.createdAt || p.created_at || new Date().toISOString(),
+          };
           // Generate a fallback SKU if empty
-          if (!sku) sku = `SKU-${String(i + 1).padStart(4, '0')}`;
+          if (!product.sku) {
+            product.sku = `SKU-${String(i + 1).padStart(4, '0')}`;
+          }
           // Deduplicate
-          if (seen.has(sku)) {
+          if (seen.has(product.sku)) {
             let suffix = 2;
             let newSku;
-            do { newSku = `${sku}-${suffix}`; suffix++; } while (seen.has(newSku));
-            sku = newSku;
+            do { newSku = `${product.sku}-${suffix}`; suffix++; } while (seen.has(newSku));
+            product.sku = newSku;
           }
-          seen.add(sku);
-          return { ...p, sku };
+          seen.add(product.sku);
+          return product;
         });
         await db.products.bulkAdd(normalized);
       }
-      if (json.repairJobs) await db.repairJobs.bulkAdd(json.repairJobs);
-      if (json.sales) await db.sales.bulkAdd(json.sales);
-      if (json.settings) await db.settings.bulkAdd(json.settings);
-      if (json.devices) await db.devices.bulkAdd(json.devices);
-      if (json.repairParts) await db.repairParts.bulkAdd(json.repairParts);
-      if (json.expenses) await db.expenses.bulkAdd(json.expenses);
-      if (json.stockPurchases) await db.stockPurchases.bulkAdd(json.stockPurchases);
+      if (json.repairJobs) {
+        const rows = json.repairJobs.map((r) => ({
+          id: r.id,
+          customerId: r.customerId ?? r.customer_id,
+          deviceId: r.deviceId ?? r.device_id,
+          mobileBrand: r.mobileBrand ?? r.mobile_brand,
+          mobileModel: r.mobileModel ?? r.mobile_model,
+          imei: r.imei,
+          color: r.color || '',
+          phonePassword: r.phonePassword ?? r.phone_password ?? '',
+          problemDescription: r.problemDescription ?? r.problem_description,
+          repairNotes: r.repairNotes ?? r.repair_notes,
+          estimatedCost: r.estimatedCost ?? r.estimated_cost,
+          laborCost: r.laborCost ?? r.labor_cost,
+          extraCost: r.extraCost ?? r.extra_cost,
+          extraCostLabel: r.extraCostLabel ?? r.extra_cost_label ?? '',
+          finalCost: r.finalCost ?? r.final_cost,
+          status: r.status,
+          receiptNumber: r.receiptNumber ?? r.receipt_number,
+          receivedAt: r.receivedAt ?? r.received_at,
+          deliveredAt: r.deliveredAt ?? r.delivered_at,
+        }));
+        await db.repairJobs.bulkAdd(rows);
+      }
+      if (json.sales) {
+        const rows = json.sales.map((s) => ({
+          id: s.id,
+          customerId: s.customerId ?? s.customer_id,
+          saleType: s.saleType ?? s.sale_type,
+          items: s.items,
+          totalAmount: s.totalAmount != null ? Number(s.totalAmount) : (s.total_amount != null ? Number(s.total_amount) : null),
+          discount: s.discount != null ? Number(s.discount) : 0,
+          paymentMethod: s.paymentMethod ?? s.payment_method,
+          receiptNumber: s.receiptNumber ?? s.receipt_number,
+          createdAt: s.createdAt ?? s.created_at,
+        }));
+        await db.sales.bulkAdd(rows);
+      }
+      if (json.settings) {
+        const rows = json.settings.map((s) => ({
+          id: s.id,
+          shopName: s.shopName ?? s.shop_name,
+          shopPhone: s.shopPhone ?? s.shop_phone,
+          shopAddress: s.shopAddress ?? s.shop_address,
+          shopLogo: s.shopLogo ?? s.shop_logo ?? '',
+          shopHours: s.shopHours ?? s.shop_hours ?? '',
+          currency: s.currency || 'EUR',
+          lastRepairSeq: s.lastRepairSeq ?? s.last_repair_seq,
+          lastRepairDate: s.lastRepairDate ?? s.last_repair_date,
+          lastSaleSeq: s.lastSaleSeq ?? s.last_sale_seq,
+          lastSaleDate: s.lastSaleDate ?? s.last_sale_date,
+        }));
+        await db.settings.bulkAdd(rows);
+      }
+      if (json.devices) {
+        const rows = json.devices.map((d) => ({
+          id: d.id,
+          customerId: d.customerId ?? d.customer_id,
+          brand: d.brand,
+          model: d.model,
+          imei: d.imei,
+          color: d.color,
+          notes: d.notes,
+          createdAt: d.createdAt ?? d.created_at ?? new Date().toISOString(),
+        }));
+        await db.devices.bulkAdd(rows);
+      }
+      if (json.repairParts) {
+        const rows = json.repairParts.map((rp) => ({
+          id: rp.id,
+          repairJobId: rp.repairJobId ?? rp.repair_job_id,
+          productId: rp.productId ?? rp.product_id,
+          productName: rp.productName ?? rp.product_name,
+          costPrice: rp.costPrice != null ? Number(rp.costPrice) : (rp.cost_price != null ? Number(rp.cost_price) : 0),
+          sellingPrice: rp.sellingPrice != null ? Number(rp.sellingPrice) : (rp.selling_price != null ? Number(rp.selling_price) : 0),
+          quantity: Number(rp.quantity),
+          totalCost: rp.totalCost != null ? Number(rp.totalCost) : (rp.total_cost != null ? Number(rp.total_cost) : null),
+          costLayers: rp.costLayers ?? rp.cost_layers ?? [],
+        }));
+        await db.repairParts.bulkAdd(rows);
+      }
+      if (json.expenses) {
+        const rows = json.expenses.map((e) => ({
+          id: e.id,
+          category: e.category,
+          amount: Number(e.amount),
+          note: e.note,
+          date: e.date,
+          createdAt: e.createdAt ?? e.created_at ?? new Date().toISOString(),
+        }));
+        await db.expenses.bulkAdd(rows);
+      }
+      if (json.stockPurchases) {
+        const rows = json.stockPurchases.map((p) => ({
+          id: p.id,
+          productId: p.productId ?? p.product_id,
+          productName: p.productName ?? p.product_name,
+          quantity: Number(p.quantity),
+          remainingQuantity: p.remainingQuantity != null ? Number(p.remainingQuantity) : (p.remaining_quantity != null ? Number(p.remaining_quantity) : Number(p.quantity)),
+          unitCost: p.unitCost != null ? Number(p.unitCost) : (p.unit_cost != null ? Number(p.unit_cost) : 0),
+          totalCost: p.totalCost != null ? Number(p.totalCost) : (p.total_cost != null ? Number(p.total_cost) : 0),
+          supplier: p.supplier,
+          note: p.note,
+          date: p.date,
+          cashOutflow: p.cashOutflow !== undefined ? p.cashOutflow : (p.cash_outflow !== undefined ? p.cash_outflow : true),
+          createdAt: p.createdAt ?? p.created_at ?? new Date().toISOString(),
+        }));
+        await db.stockPurchases.bulkAdd(rows);
+      }
     }
   );
 }
@@ -471,30 +852,40 @@ export async function getRepairParts(repairJobId) {
 }
 
 export async function addRepairParts(repairJobId, parts) {
-  const rows = parts.map((p) => ({
-    repairJobId: Number(repairJobId),
-    productId: p.productId,
-    productName: p.productName,
-    costPrice: p.costPrice,
-    sellingPrice: p.sellingPrice,
-    quantity: p.quantity,
-  }));
-  return db.repairParts.bulkAdd(rows);
+  return db.transaction('rw', db.products, db.stockPurchases, db.repairParts, async () => {
+    const rows = [];
+    for (const part of parts) {
+      const allocation = await consumeInventory(part.productId, part.quantity);
+      rows.push({
+        repairJobId: Number(repairJobId),
+        productId: part.productId,
+        productName: part.productName,
+        costPrice: allocation.unitCost,
+        sellingPrice: part.sellingPrice,
+        quantity: Number(part.quantity) || 0,
+        totalCost: allocation.totalCost,
+        costLayers: allocation.layers,
+      });
+    }
+    if (rows.length === 0) return;
+    return db.repairParts.bulkAdd(rows);
+  });
 }
 
 export async function deleteRepairParts(repairJobId) {
-  return db.repairParts.where('repairJobId').equals(Number(repairJobId)).delete();
+  return db.transaction('rw', db.products, db.stockPurchases, db.repairParts, async () => {
+    const parts = await getRepairParts(repairJobId);
+    for (const part of parts) {
+      await restoreInventory(part);
+    }
+    return db.repairParts.where('repairJobId').equals(Number(repairJobId)).delete();
+  });
 }
 
 export async function restoreRepairPartsStock(repairJobId) {
   const parts = await getRepairParts(repairJobId);
   for (const part of parts) {
-    const product = await db.products.get(Number(part.productId));
-    if (product) {
-      await db.products.update(Number(part.productId), {
-        stock: (product.stock || 0) + part.quantity,
-      });
-    }
+    await restoreInventory(part);
   }
 }
 
@@ -535,12 +926,26 @@ export async function getStockPurchases(rangeStart, rangeEnd) {
 }
 
 export async function addStockPurchase(purchase) {
-  const id = await db.stockPurchases.add({ ...purchase, createdAt: new Date().toISOString() });
+  const unitCost = Number(purchase.unitCost) || 0;
+  const quantity = Number(purchase.quantity) || 0;
+  if (quantity <= 0) throw new Error('Purchase quantity must be greater than zero.');
+  if (unitCost <= 0) throw new Error('Unit cost is required for stock purchases.');
+
+  const id = await db.stockPurchases.add({
+    ...purchase,
+    quantity,
+    unitCost,
+    totalCost: quantity * unitCost,
+    remainingQuantity: quantity,
+    cashOutflow: true,
+    createdAt: new Date().toISOString(),
+  });
   // Increment stock
   const product = await db.products.get(Number(purchase.productId));
   if (product) {
     await db.products.update(Number(purchase.productId), {
-      stock: product.stock + purchase.quantity,
+      stock: product.stock + quantity,
+      costPrice: unitCost,
     });
   }
   return id;
@@ -549,6 +954,10 @@ export async function addStockPurchase(purchase) {
 export async function deleteStockPurchase(id) {
   const purchase = await db.stockPurchases.get(Number(id));
   if (!purchase) return;
+  const remainingQuantity = Number(purchase.remainingQuantity ?? purchase.quantity) || 0;
+  if (remainingQuantity < (Number(purchase.quantity) || 0)) {
+    throw new Error('This purchase has already been sold or used. Void the related sale/repair first.');
+  }
   // Decrement stock
   const product = await db.products.get(Number(purchase.productId));
   if (product) {
@@ -597,7 +1006,7 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
     .filter((s) => inRange(s.createdAt?.slice(0, 10)))
     .reduce((sum, s) => {
       if (!s.items) return sum;
-      return sum + s.items.reduce((is, item) => is + (item.unitCost || 0) * (item.quantity || 0), 0);
+      return sum + s.items.reduce((is, item) => is + lineCost(item), 0);
     }, 0);
 
   // Repair COGS: all repair_parts whose repair job was delivered in range
@@ -608,7 +1017,7 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
   );
   const repairCOGS = allRepairParts
     .filter((rp) => deliveredJobIds.has(rp.repairJobId))
-    .reduce((sum, rp) => sum + (rp.costPrice || 0) * (rp.quantity || 0), 0);
+    .reduce((sum, rp) => sum + lineCost(rp), 0);
 
   const totalCOGS = salesCOGS + repairCOGS;
   const totalRevenue = salesRevenue + repairRevenue;
@@ -627,8 +1036,8 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
 
   // --- Stock Cash Flow ---
   const stockCashFlow = allStockPurchases
-    .filter((p) => inRange(p.date))
-    .reduce((sum, p) => sum + (p.totalCost || 0), 0);
+    .filter((p) => inRange(p.date) && (p.cashOutflow ?? p.cash_outflow) !== false)
+    .reduce((sum, p) => sum + (p.totalCost ?? p.total_cost ?? 0), 0);
 
   // --- Charts: daily breakdown ---
   const dailyMap = {};
@@ -636,7 +1045,7 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
     const d = s.createdAt?.slice(0, 10);
     if (!dailyMap[d]) dailyMap[d] = { revenue: 0, cogs: 0, expenses: 0 };
     dailyMap[d].revenue += (s.totalAmount || 0) - (s.discount || 0);
-    dailyMap[d].cogs += (s.items || []).reduce((is, item) => is + (item.unitCost || 0) * (item.quantity || 0), 0);
+    dailyMap[d].cogs += (s.items || []).reduce((is, item) => is + lineCost(item), 0);
   });
   allRepairs.filter((r) => r.status === 'Delivered' && r.finalCost != null && inRange(r.deliveredAt?.slice(0, 10))).forEach((r) => {
     const d = r.deliveredAt?.slice(0, 10);
@@ -648,7 +1057,7 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
     const d = r.deliveredAt?.slice(0, 10);
     if (!dailyMap[d]) dailyMap[d] = { revenue: 0, cogs: 0, expenses: 0 };
     const parts = allRepairParts.filter((rp) => rp.repairJobId === r.id);
-    dailyMap[d].cogs += parts.reduce((sum, rp) => sum + (rp.costPrice || 0) * (rp.quantity || 0), 0);
+    dailyMap[d].cogs += parts.reduce((sum, rp) => sum + lineCost(rp), 0);
   });
   filteredExpenses.forEach((e) => {
     if (!dailyMap[e.date]) dailyMap[e.date] = { revenue: 0, cogs: 0, expenses: 0 };
@@ -675,7 +1084,7 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
     const m = s.createdAt.slice(0, 7);
     if (monthlyMap[m]) {
       monthlyMap[m].revenue += (s.totalAmount || 0) - (s.discount || 0);
-      monthlyMap[m].cogs += (s.items || []).reduce((is, item) => is + (item.unitCost || 0) * (item.quantity || 0), 0);
+      monthlyMap[m].cogs += (s.items || []).reduce((is, item) => is + lineCost(item), 0);
     }
   });
   allRepairs.filter((r) => r.status === 'Delivered' && r.finalCost != null).forEach((r) => {
@@ -684,7 +1093,7 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
     if (monthlyMap[m]) {
       monthlyMap[m].revenue += r.finalCost || 0;
       const parts = allRepairParts.filter((rp) => rp.repairJobId === r.id);
-      monthlyMap[m].cogs += parts.reduce((sum, rp) => sum + (rp.costPrice || 0) * (rp.quantity || 0), 0);
+      monthlyMap[m].cogs += parts.reduce((sum, rp) => sum + lineCost(rp), 0);
     }
   });
   allExpenses.forEach((e) => {

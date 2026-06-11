@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getRepairJob, updateRepairJob, getRepairParts, addRepairParts, deleteRepairParts, getCustomer, getSettings, getProduct, updateProduct } from '../../lib/api';
+import { getRepairJob, updateRepairJob, getRepairParts, addRepairParts, deleteRepairParts, getCustomer, getSettings } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -96,59 +96,26 @@ export default function RepairDetail() {
   async function saveParts() {
     const id = Number(repair.id);
 
-    // 1. Load current parts (once)
-    const currentParts = await getRepairParts(id);
-
-    // 2. Restore stock for current parts (parallel)
-    await Promise.all(currentParts.map(async (part) => {
-      const product = await getProduct(part.productId);
-      if (product) {
-        await updateProduct(part.productId, {
-          stock: (product.stock || 0) + part.quantity,
-        });
+    try {
+      await deleteRepairParts(id);
+      if (tempParts.length > 0) {
+        await addRepairParts(id, tempParts);
       }
-    }));
 
-    // 3. Validate stock for new parts (all in parallel)
-    const validation = await Promise.all(tempParts.map(async (part) => {
-      const product = await getProduct(part.productId);
-      const ok = !product || part.quantity <= (product.stock || 0);
-      return { part, product, ok };
-    }));
-
-    const bad = validation.find((r) => !r.ok);
-    if (bad) {
-      addToast(`Not enough stock for ${bad.part.productName} (${bad.product.stock} available)`, 'error');
-      return;
+      const updatedParts = await getRepairParts(id);
+      setRepairParts(updatedParts);
+      const newPartsTotal = updatedParts.reduce((s, p) => s + (p.sellingPrice || p.costPrice || 0) * p.quantity, 0);
+      const labor = Number(laborCost) || 0;
+      const extra = Number(extraCost) || 0;
+      const total = labor + newPartsTotal + extra;
+      await updateRepairJob(id, { finalCost: total });
+      setRepair((prev) => ({ ...prev, finalCost: total }));
+      setEditingParts(false);
+      setTempParts([]);
+      addToast('Parts updated');
+    } catch (err) {
+      addToast(err.message || 'Unable to update parts', 'error');
     }
-
-    // 4. Delete current parts and insert new parts
-    await deleteRepairParts(id);
-    if (tempParts.length > 0) {
-      await addRepairParts(id, tempParts);
-    }
-
-    // 5. Decrement stock for new parts (parallel)
-    await Promise.all(validation.map(async ({ part, product }) => {
-      if (product) {
-        await updateProduct(part.productId, {
-          stock: (product.stock || 0) - part.quantity,
-        });
-      }
-    }));
-
-    // 6. Refresh and update final cost
-    const updatedParts = await getRepairParts(id);
-    setRepairParts(updatedParts);
-    const newPartsTotal = updatedParts.reduce((s, p) => s + (p.sellingPrice || p.costPrice || 0) * p.quantity, 0);
-    const labor = Number(laborCost) || 0;
-    const extra = Number(extraCost) || 0;
-    const total = labor + newPartsTotal + extra;
-    await updateRepairJob(id, { finalCost: total });
-    setRepair((prev) => ({ ...prev, finalCost: total }));
-    setEditingParts(false);
-    setTempParts([]);
-    addToast('Parts updated');
   }
 
   if (!repair) return null;

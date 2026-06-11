@@ -38,6 +38,8 @@ export default function ProductForm() {
     if (!form.name.trim()) e.name = 'Product name is required';
     if (!form.sku.trim()) e.sku = 'SKU is required';
     if (!form.category) e.category = 'Category is required';
+    if (!form.costPrice || Number(form.costPrice) <= 0)
+      e.costPrice = 'Cost price is required';
     if (!form.sellingPrice || Number(form.sellingPrice) < 0)
       e.sellingPrice = 'Valid selling price is required';
     setErrors(e);
@@ -69,7 +71,7 @@ export default function ProductForm() {
     };
 
     if (isEdit) {
-      await updateProduct(id, data);
+      await updateProduct(id, { ...data, stock: Number(form.stock) || 0 });
       addToast('Product updated');
     } else {
       await addProductWithInitialStock(data);
@@ -150,7 +152,10 @@ export default function ProductForm() {
                 type="number"
                 value={form.stock}
                 onChange={(e) => update('stock', e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                readOnly={isEdit}
+                className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  isEdit ? 'bg-gray-50 text-gray-500' : ''
+                }`}
               />
             </div>
             <div>
@@ -175,8 +180,17 @@ export default function ProductForm() {
                 type="number"
                 value={form.costPrice}
                 onChange={(e) => update('costPrice', e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                min="0.01"
+                step="0.01"
+                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  errors.costPrice ? 'border-red-300' : 'border-gray-300'
+                }`}
               />
+              {errors.costPrice && (
+                <p className="mt-1 text-xs text-red-600">
+                  {errors.costPrice}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

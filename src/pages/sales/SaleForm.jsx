@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { addSale, getSale, updateSale, getProduct, updateProduct } from '../../lib/api';
+import { addSale, getSale, updateSale, getProduct } from '../../lib/api';
 import { formatCurrency } from '../../lib/helpers';
 import { generateSaleNumber } from '../../lib/receiptNumber';
 import { useToast } from '../../context/ToastContext';
@@ -92,10 +92,16 @@ export default function SaleForm() {
         continue;
       }
       const product = await getProduct(item.productId);
-      if (product && item.quantity > product.stock) {
+      const oldQty = isEdit
+        ? oldItems
+            .filter((old) => old.productId === item.productId)
+            .reduce((sum, old) => sum + (Number(old.quantity) || 0), 0)
+        : 0;
+      const available = (product?.stock || 0) + oldQty;
+      if (product && item.quantity > available) {
         e[
           `qty_${item.productId}`
-        ] = `Only ${product.stock} in stock`;
+        ] = `Only ${available} in stock`;
       }
     }
     setErrors(e);
@@ -111,63 +117,37 @@ export default function SaleForm() {
       0
     );
 
-    if (isEdit) {
-      // Restore stock for old items
-      for (const item of oldItems) {
-        const product = await getProduct(item.productId);
-        if (product) {
-          await updateProduct(item.productId, {
-            stock: (product.stock || 0) + item.quantity,
-          });
-        }
+    try {
+      if (isEdit) {
+        await updateSale(id, {
+          customerId: customerId ? Number(customerId) : null,
+          items,
+          totalAmount,
+          discount: Number(discount) || 0,
+          paymentMethod,
+        });
+
+        addToast('Sale updated');
+      } else {
+        const receiptNumber = await generateSaleNumber();
+
+        await addSale({
+          customerId: customerId ? Number(customerId) : null,
+          saleType: 'Accessory',
+          items,
+          totalAmount,
+          discount: Number(discount) || 0,
+          paymentMethod,
+          createdAt: new Date().toISOString(),
+          receiptNumber,
+        });
+
+        addToast('Sale completed');
       }
-
-      await updateSale(id, {
-        customerId: customerId ? Number(customerId) : null,
-        items,
-        totalAmount,
-        discount: Number(discount) || 0,
-        paymentMethod,
-      });
-
-      // Decrement stock for new items
-      for (const item of items) {
-        const product = await getProduct(item.productId);
-        if (product) {
-          await updateProduct(item.productId, {
-            stock: product.stock - item.quantity,
-          });
-        }
-      }
-
-      addToast('Sale updated');
-    } else {
-      const receiptNumber = await generateSaleNumber();
-
-      // Decrement stock
-      for (const item of items) {
-        const product = await getProduct(item.productId);
-        if (product) {
-          await updateProduct(item.productId, {
-            stock: product.stock - item.quantity,
-          });
-        }
-      }
-
-      await addSale({
-        customerId: customerId ? Number(customerId) : null,
-        saleType: 'Accessory',
-        items,
-        totalAmount,
-        discount: Number(discount) || 0,
-        paymentMethod,
-        createdAt: new Date().toISOString(),
-        receiptNumber,
-      });
-
-      addToast('Sale completed');
+      navigate('/sales');
+    } catch (err) {
+      addToast(err.message || 'Unable to save sale', 'error');
     }
-    navigate('/sales');
   }
 
   const subtotal = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);

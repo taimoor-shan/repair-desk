@@ -34,9 +34,13 @@ export default function Purchases() {
       `Delete this purchase of ${purchase.quantity}× ${purchase.productName}? Stock will be adjusted down.`
     );
     if (!ok) return;
-    await deleteStockPurchase(purchase.id);
-    setPurchases((prev) => prev.filter((p) => p.id !== purchase.id));
-    addToast('Purchase deleted');
+    try {
+      await deleteStockPurchase(purchase.id);
+      setPurchases((prev) => prev.filter((p) => p.id !== purchase.id));
+      addToast('Purchase deleted');
+    } catch (err) {
+      addToast(err.message || 'Unable to delete purchase', 'error');
+    }
   }
 
   async function handleSubmit(e) {
@@ -46,26 +50,34 @@ export default function Purchases() {
     const product = products.find((p) => p.id === Number(selectedProductId));
     if (!product) return;
 
-    const unitCost = Number(form.unitCost) || product.costPrice || 0;
+    const unitCost = Number(form.unitCost) || 0;
+    if (unitCost <= 0) {
+      addToast('Unit cost is required for purchases', 'error');
+      return;
+    }
     const totalCost = unitCost * form.quantity;
 
-    await addStockPurchase({
-      productId: product.id,
-      productName: product.name,
-      quantity: form.quantity,
-      unitCost,
-      totalCost,
-      supplier: form.supplier || null,
-      note: form.note || null,
-      date: form.date,
-    });
+    try {
+      await addStockPurchase({
+        productId: product.id,
+        productName: product.name,
+        quantity: form.quantity,
+        unitCost,
+        totalCost,
+        supplier: form.supplier || null,
+        note: form.note || null,
+        date: form.date,
+      });
 
-    addToast(`${form.quantity} units of "${product.name}" restocked`);
-    setShowForm(false);
-    setForm(emptyRestock);
-    setSelectedProductId('');
-    getStockPurchases().then(setPurchases);
-    getProducts().then(setProducts);
+      addToast(`${form.quantity} units of "${product.name}" restocked`);
+      setShowForm(false);
+      setForm(emptyRestock);
+      setSelectedProductId('');
+      getStockPurchases().then(setPurchases);
+      getProducts().then(setProducts);
+    } catch (err) {
+      addToast(err.message || 'Unable to save purchase', 'error');
+    }
   }
 
   return (
@@ -215,7 +227,10 @@ export default function Purchases() {
                   type="number"
                   value={form.unitCost}
                   onChange={(e) => setForm({ ...form, unitCost: Number(e.target.value) })}
+                  min="0.01"
+                  step="0.01"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  required
                 />
               </div>
               <div>
@@ -243,7 +258,7 @@ export default function Purchases() {
                 </button>
                 <button
                   type="submit"
-                  disabled={!selectedProductId || form.quantity <= 0}
+                  disabled={!selectedProductId || form.quantity <= 0 || Number(form.unitCost) <= 0}
                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   Save Purchase
