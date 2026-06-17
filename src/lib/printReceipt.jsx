@@ -57,8 +57,8 @@ const STACKED_STYLES = `
       flex-direction: row;
       align-items: center;
       justify-content: center;
-      gap: 12px;
-      padding: 14px 0;
+      gap: 16px;
+      padding: 20px 0;
       user-select: none;
     }
 
@@ -70,17 +70,17 @@ const STACKED_STYLES = `
     }
 
     .stacked-scissors {
-      font-size: 16px;
+      font-size: 20px;
       color: #999;
     }
 
     .stacked-label {
       text-align: center;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 600;
       color: #666;
-      margin-bottom: 6px;
-      padding-bottom: 3px;
+      margin-bottom: 8px;
+      padding-bottom: 4px;
       border-bottom: 1px dashed #ccc;
       letter-spacing: 0.5px;
     }

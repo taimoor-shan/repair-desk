@@ -42,19 +42,19 @@ function getPrintStyles(layout) {
         max-width: none !important;
         width: 100% !important;
         padding: 0 !important;
-        font-size: 12px !important;
+        font-size: 13px !important;
       }
-      .print-area--stacked .receipt-shop-name { font-size: 15px !important; }
-      .print-area--stacked .receipt-sub { font-size: 11px !important; }
-      .print-area--stacked .receipt-sm { font-size: 11px !important; }
-      .print-area--stacked .receipt-total { font-size: 14px !important; }
-      .print-area--stacked .receipt-footer { font-size: 11px !important; }
-      .print-area--stacked .receipt-terms { font-size: 10px !important; }
+      .print-area--stacked .receipt-shop-name { font-size: 17px !important; }
+      .print-area--stacked .receipt-sub { font-size: 12px !important; }
+      .print-area--stacked .receipt-sm { font-size: 12px !important; }
+      .print-area--stacked .receipt-total { font-size: 16px !important; }
+      .print-area--stacked .receipt-footer { font-size: 12px !important; }
+      .print-area--stacked .receipt-terms { font-size: 11px !important; }
       .print-area--stacked .receipt-logo {
-        max-height: 52px !important;
-        max-width: 140px !important;
+        max-height: 64px !important;
+        max-width: 160px !important;
       }
-      .print-area--stacked .receipt-meta-label { min-width: 58px !important; }
+      .print-area--stacked .receipt-meta-label { min-width: 62px !important; }
     }
   `;
 }
@@ -98,24 +98,24 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
   };
 
   const wrapStyle = isStacked
-    ? { ...s.wrap, maxWidth: '100%', padding: '14px 16px', fontSize: '12px', lineHeight: '1.45' }
+    ? { ...s.wrap, maxWidth: '100%', padding: '20px 18px', fontSize: '13px', lineHeight: '1.5' }
     : s.wrap;
 
   const stackedS = isStacked ? {
-    shopName: { ...s.shopName, fontSize: '15px', margin: '3px 0 4px' },
-    sub: { ...s.sub, fontSize: '11px' },
-    divider: { borderTop: '1px dashed #aaa', margin: '8px 0' },
-    row: { ...s.row, padding: '3px 0' },
-    totalRow: { ...s.totalRow, padding: '4px 0', fontSize: '14px' },
-    th: { ...s.th, paddingBottom: '3px', fontSize: '11px' },
-    thRight: { ...s.thRight, paddingBottom: '3px', fontSize: '11px' },
-    td: { ...s.td, padding: '3px 0', fontSize: tableDense ? '10px' : '11px' },
-    tdRight: { ...s.tdRight, padding: '3px 0', fontSize: tableDense ? '10px' : '11px' },
-    tdCenter: { ...s.tdCenter, padding: '3px 0', fontSize: tableDense ? '10px' : '11px' },
-    metaRow: { ...s.metaRow, gap: '8px', padding: '3px 0' },
-    metaLabel: { ...s.metaLabel, minWidth: '56px' },
-    footer: { ...s.footer, marginTop: '8px', paddingTop: '6px', fontSize: '10px' },
-    table: { ...s.table, marginBottom: '6px' },
+    shopName: { ...s.shopName, fontSize: '17px', margin: '4px 0 6px' },
+    sub: { ...s.sub, fontSize: '12px' },
+    divider: { borderTop: '1px dashed #aaa', margin: '10px 0' },
+    row: { ...s.row, padding: '4px 0' },
+    totalRow: { ...s.totalRow, padding: '5px 0', fontSize: '16px' },
+    th: { ...s.th, paddingBottom: '4px', fontSize: '12px' },
+    thRight: { ...s.thRight, paddingBottom: '4px', fontSize: '12px' },
+    td: { ...s.td, padding: '4px 0', fontSize: tableDense ? '11px' : '12px' },
+    tdRight: { ...s.tdRight, padding: '4px 0', fontSize: tableDense ? '11px' : '12px' },
+    tdCenter: { ...s.tdCenter, padding: '4px 0', fontSize: tableDense ? '11px' : '12px' },
+    metaRow: { ...s.metaRow, gap: '10px', padding: '4px 0' },
+    metaLabel: { ...s.metaLabel, minWidth: '60px' },
+    footer: { ...s.footer, marginTop: '12px', paddingTop: '8px', fontSize: '11px' },
+    table: { ...s.table, marginBottom: '8px' },
   } : {};
 
   // ── Stacked two-column grid layout ──
@@ -128,7 +128,7 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
             gridTemplateRows: 'auto auto auto',
-            gap: '16px',
+            gap: '18px',
           }}>
             {/* ── LEFT COLUMN: header*/}
             <div style={{ gridColumn: '1', gridRow: '1' }}>
@@ -136,10 +136,10 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
               <div style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '12px',
+                gap: '14px',
                 alignItems: 'start',
-                marginBottom: '10px',
-                paddingBottom: '8px',
+                marginBottom: '14px',
+                paddingBottom: '10px',
                 borderBottom: '1px dashed #aaa',
               }}>
                 {shop?.shopLogo && (
@@ -148,7 +148,7 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
                       src={shop.shopLogo}
                       alt="Logo"
                       className="receipt-logo"
-                      style={{ maxHeight: '52px', objectFit: 'contain' }}
+                      style={{ maxHeight: '64px', objectFit: 'contain' }}
                     />
                   </div>
                 )}
@@ -165,14 +165,14 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
             {/* ── RIGHT COLUMN: repair/sale details + receipt# + customer ──  + totals ── */}
             <div style={{ gridColumn: '2', gridRow: '1' }}>
                     {/* Receipt number + date */}
-              <div style={{ ...stackedS.row, marginBottom: '6px' }}>
+              <div style={{ ...stackedS.row, marginBottom: '8px' }}>
                 <span>Receipt: <strong>{data.receiptNumber}</strong></span>
                 <span style={s.label}>{new Date().toLocaleDateString()}</span>
               </div>
 
               {/* Customer */}
               {data._customer && (
-                <div style={{ marginBottom: '6px' }}>
+                <div style={{ marginBottom: '8px' }}>
                   {/* <div style={stackedS.divider} /> */}
                   <div style={stackedS.metaRow}>
                     <span className="receipt-meta-label" style={stackedS.metaLabel}>Customer:</span>
@@ -188,7 +188,7 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
               )}
               {/* Repair details */}
               {isRepair && (
-                <div style={{ marginBottom: '8px' }}>
+                <div style={{ marginBottom: '10px' }}>
                   {[
                     ['Brand', data.mobileBrand],
                     ['Model', data.mobileModel],
@@ -230,7 +230,7 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
 
               {/* Totals */}
               <div style={stackedS.divider} />
-              <div style={{ paddingTop: '6px' }}>
+              <div style={{ paddingTop: '8px' }}>
                 {isRepair && isFinal && (
                   <>
                     {data.laborCost > 0 && (
@@ -279,17 +279,17 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
               gridColumn: '1 / 3',
               gridRow: '2',
               borderTop: '1px dashed #aaa',
-              marginTop: '8px',
-              paddingTop: '10px',
+              marginTop: '14px',
+              paddingTop: '14px',
             }}>
-              <p style={{ fontWeight: 'bold', margin: '0 0 6px', textAlign: 'start', fontSize: '10px' }}>TERMS AND CONDITIONS</p>
+              <p style={{ fontWeight: 'bold', margin: '0 0 8px', textAlign: 'start', fontSize: '11px' }}>TERMS AND CONDITIONS</p>
               <ol style={{
                 margin: 0,
                 paddingLeft: '14px',
                 columnCount: 2,
-                columnGap: '16px',
-                fontSize: '9px',
-                lineHeight: '1.5',
+                columnGap: '18px',
+                fontSize: '10px',
+                lineHeight: '1.55',
                 color: '#555',
               }}>
                 <li>All phones to be tested and paid for at collection</li>
