@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { getProducts } from '../lib/api';
-import { rankPrefixFirst } from '../lib/helpers';
+import { formatCurrency, rankPrefixFirst } from '../lib/helpers';
 
 export default function ProductPicker({ onSelect }) {
   const [query, setQuery] = useState('');
@@ -59,8 +59,8 @@ export default function ProductPicker({ onSelect }) {
                 onClick={() => selectProduct(p)}
               >
                 <span className="font-medium">{p.name}</span>
-                <span className="text-gray-500 ml-2">
-                  Stock: {p.stock} | {p.sellingPrice}
+                <span className="text-gray-400 text-xs ml-2">
+                  {p.sku && `${p.sku} · `}Stock: {p.stock} · {formatCurrency(p.sellingPrice)}
                 </span>
               </button>
             ))

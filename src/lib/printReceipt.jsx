@@ -2,7 +2,7 @@ import ReactDOM from 'react-dom/client';
 import PrintReceipt from '../components/PrintReceipt';
 
 const STACKED_STYLES = `
-  @page { size: A4 portrait; margin: 8mm; }
+  @page { size: A4 portrait; margin: 6mm; }
 
   body {
     margin: 0;
@@ -58,7 +58,7 @@ const STACKED_STYLES = `
       align-items: center;
       justify-content: center;
       gap: 16px;
-      padding: 20px 0;
+      padding: 28px 0;
       user-select: none;
     }
 
@@ -119,11 +119,11 @@ export function printReceiptDocument({ shop, type, data, layout = 'a4' }) {
           </div>
           <div className="stacked-copy">
             <div className="stacked-label">Shop Copy</div>
-            <PrintReceipt shop={shop} type={type} data={data} layout="stacked" />
+            <PrintReceipt shop={shop} type={type} data={data} layout="stacked" showTerms={false} />
           </div>
         </div>
         {/* Trailing style to override PrintReceipt's own @page rules */}
-        <style>{`@page { size: A4 portrait; margin: 8mm; }`}</style>
+        <style>{`@page { size: A4 portrait; margin: 6mm; }`}</style>
       </>
     );
   }

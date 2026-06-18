@@ -10,7 +10,7 @@ function getPrintStyles(layout) {
       body { margin: 0; }
     }
     @page {
-      margin: ${isStacked ? '8mm' : isA4 ? '15mm' : '0'};
+      margin: ${isStacked ? '6mm' : isA4 ? '15mm' : '0'};
       size: ${isStacked || isA4 ? 'A4' : 'auto'};
     }
     @media print {
@@ -59,7 +59,7 @@ function getPrintStyles(layout) {
   `;
 }
 
-export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
+export default function PrintReceipt({ shop, type, data, layout = 'a4', showTerms = true }) {
   if (!data) return null;
 
   const isRepair = type === 'repair' || type === 'initial' || type === 'final';
@@ -98,24 +98,24 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
   };
 
   const wrapStyle = isStacked
-    ? { ...s.wrap, maxWidth: '100%', padding: '20px 18px', fontSize: '13px', lineHeight: '1.5' }
+    ? { ...s.wrap, maxWidth: '100%', padding: '12px 18px', fontSize: '13px', lineHeight: '1.35' }
     : s.wrap;
 
   const stackedS = isStacked ? {
-    shopName: { ...s.shopName, fontSize: '17px', margin: '4px 0 6px' },
+    shopName: { ...s.shopName, fontSize: '17px', margin: '2px 0 2px' },
     sub: { ...s.sub, fontSize: '12px' },
-    divider: { borderTop: '1px dashed #aaa', margin: '10px 0' },
-    row: { ...s.row, padding: '4px 0' },
-    totalRow: { ...s.totalRow, padding: '5px 0', fontSize: '16px' },
-    th: { ...s.th, paddingBottom: '4px', fontSize: '12px' },
-    thRight: { ...s.thRight, paddingBottom: '4px', fontSize: '12px' },
-    td: { ...s.td, padding: '4px 0', fontSize: tableDense ? '11px' : '12px' },
-    tdRight: { ...s.tdRight, padding: '4px 0', fontSize: tableDense ? '11px' : '12px' },
-    tdCenter: { ...s.tdCenter, padding: '4px 0', fontSize: tableDense ? '11px' : '12px' },
-    metaRow: { ...s.metaRow, gap: '10px', padding: '4px 0' },
+    divider: { borderTop: '1px dashed #aaa', margin: '6px 0' },
+    row: { ...s.row, padding: '2px 0' },
+    totalRow: { ...s.totalRow, padding: '2px 0', fontSize: '16px' },
+    th: { ...s.th, paddingBottom: '2px', fontSize: '12px' },
+    thRight: { ...s.thRight, paddingBottom: '2px', fontSize: '12px' },
+    td: { ...s.td, padding: '2px 0', fontSize: tableDense ? '11px' : '12px' },
+    tdRight: { ...s.tdRight, padding: '2px 0', fontSize: tableDense ? '11px' : '12px' },
+    tdCenter: { ...s.tdCenter, padding: '2px 0', fontSize: tableDense ? '11px' : '12px' },
+    metaRow: { ...s.metaRow, gap: '10px', padding: '1px 0' },
     metaLabel: { ...s.metaLabel, minWidth: '60px' },
-    footer: { ...s.footer, marginTop: '12px', paddingTop: '8px', fontSize: '11px' },
-    table: { ...s.table, marginBottom: '8px' },
+    footer: { ...s.footer, marginTop: '6px', paddingTop: '4px', fontSize: '11px' },
+    table: { ...s.table, marginBottom: '4px' },
   } : {};
 
   // ── Stacked two-column grid layout ──
@@ -128,7 +128,8 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
             display: 'grid',
             gridTemplateColumns: '1fr 1fr',
             gridTemplateRows: 'auto auto auto',
-            gap: '18px',
+            rowGap: '10px',
+            columnGap: '18px',
           }}>
             {/* ── LEFT COLUMN: header*/}
             <div style={{ gridColumn: '1', gridRow: '1' }}>
@@ -136,10 +137,10 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
               <div style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '14px',
+                gap: '4px',
                 alignItems: 'start',
-                marginBottom: '14px',
-                paddingBottom: '10px',
+                marginBottom: '8px',
+                paddingBottom: '6px',
                 borderBottom: '1px dashed #aaa',
               }}>
                 {shop?.shopLogo && (
@@ -165,14 +166,14 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
             {/* ── RIGHT COLUMN: repair/sale details + receipt# + customer ──  + totals ── */}
             <div style={{ gridColumn: '2', gridRow: '1' }}>
                     {/* Receipt number + date */}
-              <div style={{ ...stackedS.row, marginBottom: '8px' }}>
+              <div style={{ ...stackedS.row, marginBottom: '4px' }}>
                 <span>Receipt: <strong>{data.receiptNumber}</strong></span>
                 <span style={s.label}>{new Date().toLocaleDateString()}</span>
               </div>
 
               {/* Customer */}
               {data._customer && (
-                <div style={{ marginBottom: '8px' }}>
+                <div style={{ marginBottom: '4px' }}>
                   {/* <div style={stackedS.divider} /> */}
                   <div style={stackedS.metaRow}>
                     <span className="receipt-meta-label" style={stackedS.metaLabel}>Customer:</span>
@@ -188,7 +189,7 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
               )}
               {/* Repair details */}
               {isRepair && (
-                <div style={{ marginBottom: '10px' }}>
+                <div style={{ marginBottom: '6px' }}>
                   {[
                     ['Brand', data.mobileBrand],
                     ['Model', data.mobileModel],
@@ -230,7 +231,7 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
 
               {/* Totals */}
               <div style={stackedS.divider} />
-              <div style={{ paddingTop: '8px' }}>
+              <div style={{ paddingTop: '4px' }}>
                 {isRepair && isFinal && (
                   <>
                     {data.laborCost > 0 && (
@@ -275,12 +276,13 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
             </div>
 
             {/* ── TERMS & CONDITIONS (full width, split two columns) ── */}
+            {showTerms && (
             <div style={{
               gridColumn: '1 / 3',
               gridRow: '2',
               borderTop: '1px dashed #aaa',
-              marginTop: '14px',
-              paddingTop: '14px',
+              marginTop: '6px',
+              paddingTop: '8px',
             }}>
               <p style={{ fontWeight: 'bold', margin: '0 0 8px', textAlign: 'start', fontSize: '11px' }}>TERMS AND CONDITIONS</p>
               <ol style={{
@@ -301,6 +303,7 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
                 <li>Please ask us for our T&Cs</li>
               </ol>
             </div>
+            )}
 
             {/* ── FOOTER (full width) ── */}
             <div className="receipt-footer" style={{
@@ -463,6 +466,7 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
         </div>
 
         {/* Terms & Conditions */}
+        {showTerms && (
         <div className="receipt-footer receipt-terms" style={{ ...s.footer, fontSize: '9px', color: '#555', textAlign: 'left', lineHeight: '1.4' }}>
           <p style={{ fontWeight: 'bold', margin: '0 0 4px', textAlign: 'center' }}>TERMS AND CONDITIONS</p>
           <ol style={{ margin: 0, paddingLeft: '14px' }}>
@@ -475,6 +479,7 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4' }) {
             <li>Please ask us for our T&Cs</li>
           </ol>
         </div>
+        )}
 
       </div>
     </>
