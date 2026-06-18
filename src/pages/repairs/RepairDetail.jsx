@@ -169,14 +169,12 @@ export default function RepairDetail() {
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          {repair.status !== 'Delivered' && (
-            <Link
-              to={`/repairs/${repair.id}/edit`}
-              className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              Edit Details
-            </Link>
-          )}
+          <Link
+            to={`/repairs/${repair.id}/edit`}
+            className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
+            Edit Details
+          </Link>
           <StatusBadge status={repair.status} />
         </div>
       </div>
@@ -255,59 +253,48 @@ export default function RepairDetail() {
             <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
               <div className="flex justify-between items-center">
                 <dt className="text-gray-500 text-sm">Labor</dt>
-                {repair.status !== 'Delivered' ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="number"
-                      value={laborCost}
-                      onChange={(e) => setLaborCost(e.target.value)}
-                      className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right"
-                      placeholder="0"
-                      min="0"
-                    />
-                    <button
-                      onClick={saveLaborExtra}
-                      className="text-xs text-blue-600 font-medium"
-                    >
-                      Save
-                    </button>
-                  </div>
-                ) : (
-                  <dd className="font-medium">{formatCurrency(repair.laborCost || 0)}</dd>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="number"
+                    value={laborCost}
+                    onChange={(e) => setLaborCost(e.target.value)}
+                    className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right"
+                    placeholder="0"
+                    min="0"
+                  />
+                  <button
+                    onClick={saveLaborExtra}
+                    className="text-xs text-blue-600 font-medium"
+                  >
+                    Save
+                  </button>
+                </div>
               </div>
 
               <div className="flex justify-between items-center">
-                {repair.status !== 'Delivered' ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      type="text"
-                      value={extraCostLabel}
-                      onChange={(e) => setExtraCostLabel(e.target.value)}
-                      className="w-24 border border-gray-300 rounded px-2 py-1 text-sm text-gray-500"
-                      placeholder="Extra Cost"
-                    />
-                    <input
-                      type="number"
-                      value={extraCost}
-                      onChange={(e) => setExtraCost(e.target.value)}
-                      className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right"
-                      placeholder="0"
-                      min="0"
-                    />
-                    <button
-                      onClick={saveLaborExtra}
-                      className="text-xs text-blue-600 font-medium"
-                    >
-                      Save
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <dt className="text-gray-500 text-sm">{repair.extraCostLabel || 'Extra Cost'}</dt>
-                    <dd className="font-medium">{formatCurrency(repair.extraCost || 0)}</dd>
-                  </>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="text"
+                    value={extraCostLabel}
+                    onChange={(e) => setExtraCostLabel(e.target.value)}
+                    className="w-24 border border-gray-300 rounded px-2 py-1 text-sm text-gray-500"
+                    placeholder="Extra Cost"
+                  />
+                  <input
+                    type="number"
+                    value={extraCost}
+                    onChange={(e) => setExtraCost(e.target.value)}
+                    className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right"
+                    placeholder="0"
+                    min="0"
+                  />
+                  <button
+                    onClick={saveLaborExtra}
+                    className="text-xs text-blue-600 font-medium"
+                  >
+                    Save
+                  </button>
+                </div>
               </div>
 
               <div className="flex justify-between items-center pt-2 border-t border-gray-100">
@@ -416,7 +403,7 @@ export default function RepairDetail() {
                   )
                 )}
 
-                {repair.status !== 'Delivered' && repair.status !== 'Pending' && (
+                {repair.status !== 'Pending' && (
                   <button
                     onClick={() => {
                       setTempParts([...repairParts]);

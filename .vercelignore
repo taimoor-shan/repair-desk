@@ -1,0 +1,5 @@
+# Development tooling
+.codegraph/
+.claude/
+.cursor/
+.mcp.json
