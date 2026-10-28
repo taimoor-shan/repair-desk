@@ -12,7 +12,7 @@ export default function CustomerList() {
   const confirm = useConfirm();
   const addToast = useToast();
 
-  const { query, setQuery, results, isLoading } = useSmartSearch(
+  const { query, setQuery, results, isLoading, refetch } = useSmartSearch(
     getCustomers,
     ['name', 'phone'],
     300
@@ -21,26 +21,29 @@ export default function CustomerList() {
   const customers = results;
 
   async function handleDelete(customer) {
-    const [repairs, sales] = await Promise.all([
-      getRepairJobsByCustomer(customer.id),
-      getSalesByCustomer(customer.id),
-    ]);
+    try {
+      const [repairs, sales] = await Promise.all([
+        getRepairJobsByCustomer(customer.id),
+        getSalesByCustomer(customer.id),
+      ]);
 
-    const parts = [`Delete "${customer.name}"?`];
-    if (repairs.length > 0 || sales.length > 0) {
-      parts.push(
-        `This customer has ${repairs.length} repair${repairs.length !== 1 ? 's' : ''} and ${sales.length} sale${sales.length !== 1 ? 's' : ''}. These records will be kept but marked as Walk-in.`
-      );
+      const parts = [`Delete "${customer.name}"?`];
+      if (repairs.length > 0 || sales.length > 0) {
+        parts.push(
+          `This customer has ${repairs.length} repair${repairs.length !== 1 ? 's' : ''} and ${sales.length} sale${sales.length !== 1 ? 's' : ''}. These records will be kept but marked as Walk-in.`
+        );
+      }
+      parts.push('This cannot be undone.');
+
+      const ok = await confirm('Delete Customer', parts.join(' '));
+      if (!ok) return;
+
+      await deleteCustomer(customer.id);
+      refetch();
+      addToast(`"${customer.name}" deleted`);
+    } catch (err) {
+      addToast(err.message || 'Unable to delete customer', 'error');
     }
-    parts.push('This cannot be undone.');
-
-    const ok = await confirm('Delete Customer', parts.join(' '));
-    if (!ok) return;
-    await deleteCustomer(customer.id);
-    // Refetch will happen via the hook's fetchFn... we need to force a re-mount or handle manually
-    // For now, filter out locally:
-    window.location.reload();
-    addToast(`"${customer.name}" deleted`);
   }
 
   return (

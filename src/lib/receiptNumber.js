@@ -1,7 +1,8 @@
 import { getNextRepairSeq, getNextSaleSeq } from './api';
+import { localDateString } from './helpers';
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  return localDateString().replace(/-/g, '');
 }
 
 function pad(n) {

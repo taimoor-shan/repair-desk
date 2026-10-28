@@ -141,7 +141,6 @@ export default function PrintReceipt({ shop, type, data, layout = 'a4', showTerm
                 alignItems: 'start',
                 marginBottom: '8px',
                 paddingBottom: '6px',
-                borderBottom: '1px dashed #aaa',
               }}>
                 {shop?.shopLogo && (
                   <div style={{ flexShrink: 0 }}>

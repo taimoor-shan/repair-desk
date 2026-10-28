@@ -295,6 +295,67 @@ function normalizeCostedItem(item, allocation) {
   };
 }
 
+function normalizeRepairParts(parts) {
+  const merged = new Map();
+  for (const part of parts || []) {
+    const productId = Number(part.productId);
+    const quantity = Number(part.quantity);
+    if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error('Every repair part needs a product and a quantity of at least 1.');
+    }
+    const key = String(productId);
+    const existing = merged.get(key);
+    if (existing) {
+      existing.quantity += quantity;
+      if (part.sellingPrice !== undefined) existing.sellingPrice = part.sellingPrice;
+      if (part.productName) existing.productName = part.productName;
+    } else {
+      merged.set(key, {
+        productId,
+        productName: part.productName,
+        quantity,
+        sellingPrice: part.sellingPrice,
+        costPrice: part.costPrice,
+      });
+    }
+  }
+  return [...merged.values()];
+}
+
+async function rollbackConsumedItems(items, originalError) {
+  const failures = [];
+  for (const item of items) {
+    try {
+      await restoreInventory(item);
+    } catch (err) {
+      failures.push(`${item.productName || item.productId}: ${err.message}`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `${originalError.message} Inventory rollback failed for ${failures.join('; ')}. Verify stock manually.`
+    );
+  }
+  throw originalError;
+}
+
+async function rollbackRestoredItems(items, originalError) {
+  const failures = [];
+  for (const item of items) {
+    try {
+      await consumeInventory(item.productId, item.quantity);
+    } catch (err) {
+      failures.push(`${item.productName || item.productId}: ${err.message}`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `${originalError.message} Inventory rollback failed for ${failures.join('; ')}. Verify stock manually.`
+    );
+  }
+  throw originalError;
+}
+
 async function ensureCostLayersForProduct(product) {
   const { data, error } = await supabase
     .from('stock_purchases')
@@ -356,34 +417,54 @@ async function consumeInventory(productId, quantity) {
   let remaining = qty;
   let totalCost = 0;
   const layers = [];
+  const appliedLots = [];
 
-  for (const lot of lots) {
-    if (remaining <= 0) break;
-    const lotRemaining = Number(lot.remainingQuantity ?? lot.quantity) || 0;
-    const take = Math.min(lotRemaining, remaining);
-    if (take <= 0) continue;
+  try {
+    for (const lot of lots) {
+      if (remaining <= 0) break;
+      const lotRemaining = Number(lot.remainingQuantity ?? lot.quantity) || 0;
+      const take = Math.min(lotRemaining, remaining);
+      if (take <= 0) continue;
 
-    const unitCost = Number(lot.unitCost) || 0;
-    const { error: updateLotError } = await supabase
-      .from('stock_purchases')
-      .update({ remaining_quantity: lotRemaining - take })
-      .eq('id', lot.id);
-    if (updateLotError) throw new Error(updateLotError.message);
+      const unitCost = Number(lot.unitCost) || 0;
+      const { error: updateLotError } = await supabase
+        .from('stock_purchases')
+        .update({ remaining_quantity: lotRemaining - take })
+        .eq('id', lot.id);
+      if (updateLotError) throw new Error(updateLotError.message);
 
-    layers.push({ purchaseId: lot.id, quantity: take, unitCost });
-    totalCost += take * unitCost;
-    remaining -= take;
+      appliedLots.push({ id: lot.id, previous: lotRemaining });
+      layers.push({ purchaseId: lot.id, quantity: take, unitCost });
+      totalCost += take * unitCost;
+      remaining -= take;
+    }
+
+    if (remaining > 0) {
+      throw new Error(`Not enough costed stock for "${product.name}". Add a purchase with unit cost first.`);
+    }
+
+    const { error: stockError } = await supabase
+      .from('products')
+      .update({ stock: (Number(product.stock) || 0) - qty })
+      .eq('id', productId);
+    if (stockError) throw new Error(stockError.message);
+  } catch (err) {
+    const rollbackErrors = [];
+    for (const applied of appliedLots.reverse()) {
+      const { error: rollbackError } = await supabase
+        .from('stock_purchases')
+        .update({ remaining_quantity: applied.previous })
+        .eq('id', applied.id);
+      if (rollbackError) rollbackErrors.push(rollbackError.message);
+    }
+    if (rollbackErrors.length > 0) {
+      throw new Error(
+        `${err.message} Inventory rollback failed: ${rollbackErrors.join('; ')}. Verify stock manually.`,
+        { cause: err }
+      );
+    }
+    throw err;
   }
-
-  if (remaining > 0) {
-    throw new Error(`Not enough costed stock for "${product.name}". Add a purchase with unit cost first.`);
-  }
-
-  const { error: stockError } = await supabase
-    .from('products')
-    .update({ stock: (Number(product.stock) || 0) - qty })
-    .eq('id', productId);
-  if (stockError) throw new Error(stockError.message);
 
   return {
     layers,
@@ -397,50 +478,77 @@ async function restoreInventory(item) {
   if (qty <= 0) return;
 
   const product = await getProduct(item.productId).catch(() => null);
+  const originalStock = product ? Number(product.stock) || 0 : null;
+
   if (product) {
     const { error } = await supabase
       .from('products')
-      .update({ stock: (Number(product.stock) || 0) + qty })
+      .update({ stock: originalStock + qty })
       .eq('id', item.productId);
     if (error) throw new Error(error.message);
   }
 
-  if (Array.isArray(item.costLayers) && item.costLayers.length > 0) {
-    for (const layer of item.costLayers) {
-      const { data: purchase, error: fetchError } = await supabase
-        .from('stock_purchases')
-        .select('remaining_quantity, quantity')
-        .eq('id', layer.purchaseId)
-        .single();
-      if (fetchError) throw new Error(fetchError.message);
-      const { error: updateError } = await supabase
-        .from('stock_purchases')
-        .update({
-          remaining_quantity:
-            (Number(purchase.remaining_quantity ?? purchase.quantity) || 0) +
-            (Number(layer.quantity) || 0),
-        })
-        .eq('id', layer.purchaseId);
-      if (updateError) throw new Error(updateError.message);
+  const restoredLots = [];
+  try {
+    if (Array.isArray(item.costLayers) && item.costLayers.length > 0) {
+      for (const layer of item.costLayers) {
+        const { data: purchase, error: fetchError } = await supabase
+          .from('stock_purchases')
+          .select('remaining_quantity, quantity')
+          .eq('id', layer.purchaseId)
+          .single();
+        if (fetchError) throw new Error(fetchError.message);
+        const previous = Number(purchase.remaining_quantity ?? purchase.quantity) || 0;
+        const { error: updateError } = await supabase
+          .from('stock_purchases')
+          .update({
+            remaining_quantity: previous + (Number(layer.quantity) || 0),
+          })
+          .eq('id', layer.purchaseId);
+        if (updateError) throw new Error(updateError.message);
+        restoredLots.push({ id: layer.purchaseId, previous });
+      }
+    } else {
+      const unitCost = Number(item.unitCost ?? item.costPrice ?? product?.costPrice) || 0;
+      if (unitCost > 0) {
+        const { error } = await supabase.from('stock_purchases').insert(fromStockPurchase({
+          productId: item.productId,
+          productName: item.productName || product?.name || 'Restored item',
+          quantity: qty,
+          remainingQuantity: qty,
+          unitCost,
+          totalCost: qty * unitCost,
+          supplier: null,
+          note: 'Legacy stock return',
+          date: new Date().toISOString().slice(0, 10),
+          cashOutflow: false,
+        }));
+        if (error) throw new Error(error.message);
+      }
     }
-    return;
-  }
-
-  const unitCost = Number(item.unitCost ?? item.costPrice ?? product?.costPrice) || 0;
-  if (unitCost > 0) {
-    const { error } = await supabase.from('stock_purchases').insert(fromStockPurchase({
-      productId: item.productId,
-      productName: item.productName || product?.name || 'Restored item',
-      quantity: qty,
-      remainingQuantity: qty,
-      unitCost,
-      totalCost: qty * unitCost,
-      supplier: null,
-      note: 'Legacy stock return',
-      date: new Date().toISOString().slice(0, 10),
-      cashOutflow: false,
-    }));
-    if (error) throw new Error(error.message);
+  } catch (err) {
+    const rollbackErrors = [];
+    if (product) {
+      const { error } = await supabase
+        .from('products')
+        .update({ stock: originalStock })
+        .eq('id', item.productId);
+      if (error) rollbackErrors.push(error.message);
+    }
+    for (const restored of restoredLots.reverse()) {
+      const { error } = await supabase
+        .from('stock_purchases')
+        .update({ remaining_quantity: restored.previous })
+        .eq('id', restored.id);
+      if (error) rollbackErrors.push(error.message);
+    }
+    if (rollbackErrors.length > 0) {
+      throw new Error(
+        `${err.message} Inventory rollback failed: ${rollbackErrors.join('; ')}. Verify stock manually.`,
+        { cause: err }
+      );
+    }
+    throw err;
   }
 }
 
@@ -489,6 +597,25 @@ export async function updateCustomer(id, data) {
 }
 
 export async function deleteCustomer(id) {
+  // Records stay, but are detached from the deleted customer and show as Walk-in.
+  const { error: repairError } = await supabase
+    .from('repair_jobs')
+    .update({ customer_id: null })
+    .eq('customer_id', id);
+  if (repairError) throw new Error(repairError.message);
+
+  const { error: saleError } = await supabase
+    .from('sales')
+    .update({ customer_id: null })
+    .eq('customer_id', id);
+  if (saleError) throw new Error(saleError.message);
+
+  const { error: deviceError } = await supabase
+    .from('devices')
+    .update({ customer_id: null })
+    .eq('customer_id', id);
+  if (deviceError) throw new Error(deviceError.message);
+
   const { error } = await supabase.from('customers').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
@@ -589,13 +716,22 @@ export async function adjustStock(id, delta) {
 
   const product = await getProduct(id);
   const allocation = await consumeInventory(id, Math.abs(amount));
+  const consumed = {
+    productId: Number(id),
+    productName: product.name,
+    quantity: Math.abs(amount),
+    costPrice: allocation.unitCost,
+    costLayers: allocation.layers,
+  };
   const { error } = await supabase.from('expenses').insert(fromExpense({
     category: 'Inventory Adjustment',
     amount: allocation.totalCost,
     note: `Stock decreased: ${product.name}`,
     date: new Date().toISOString().slice(0, 10),
   }));
-  if (error) throw new Error(error.message);
+  if (error) {
+    await rollbackConsumedItems([consumed], new Error(error.message));
+  }
 }
 
 // ─── Repair Jobs ───────────────────────────────────────────────────
@@ -639,18 +775,47 @@ export async function updateRepairJob(id, data) {
 
 export async function deleteRepairJob(id) {
   const parts = await getRepairParts(id);
-  for (const part of parts) {
-    await restoreInventory(part);
+  const restored = [];
+  try {
+    for (const part of parts) {
+      await restoreInventory(part);
+      restored.push(part);
+    }
+  } catch (err) {
+    return rollbackRestoredItems(restored, err);
   }
+
   if (parts.length > 0) {
     const { error: partsErr } = await supabase
       .from('repair_parts')
       .delete()
       .eq('repair_job_id', id);
-    if (partsErr) throw new Error(partsErr.message);
+    if (partsErr) return rollbackRestoredItems(parts, new Error(partsErr.message));
   }
+
   const { error } = await supabase.from('repair_jobs').delete().eq('id', id);
-  if (error) throw new Error(error.message);
+  if (error) {
+    const rollbackErrors = [];
+    if (parts.length > 0) {
+      const { error: reinsertError } = await supabase
+        .from('repair_parts')
+        .insert(parts.map((part) => fromRepairPart(part)));
+      if (reinsertError) rollbackErrors.push(reinsertError.message);
+    }
+    for (const part of parts) {
+      try {
+        await consumeInventory(part.productId, part.quantity);
+      } catch (err) {
+        rollbackErrors.push(`${part.productName || part.productId}: ${err.message}`);
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new Error(
+        `${error.message} Rollback failed: ${rollbackErrors.join('; ')}. Verify repair parts and stock manually.`
+      );
+    }
+    throw new Error(error.message);
+  }
 }
 
 export async function getRepairJobsByCustomer(customerId) {
@@ -725,9 +890,13 @@ export async function getSale(id) {
 
 export async function addSale(sale) {
   const items = [];
-  for (const item of sale.items || []) {
-    const allocation = await consumeInventory(item.productId, item.quantity);
-    items.push(normalizeCostedItem(item, allocation));
+  try {
+    for (const item of sale.items || []) {
+      const allocation = await consumeInventory(item.productId, item.quantity);
+      items.push(normalizeCostedItem(item, allocation));
+    }
+  } catch (err) {
+    return rollbackConsumedItems(items, err);
   }
 
   const { data, error } = await supabase
@@ -735,29 +904,65 @@ export async function addSale(sale) {
     .insert(fromSale({ ...sale, items }))
     .select()
     .single();
-  if (error) throw new Error(error.message);
+  if (error) {
+    return rollbackConsumedItems(items, new Error(error.message));
+  }
   return toSale(data).id;
 }
 
 export async function updateSale(id, data) {
   const existing = await getSale(id);
-  if (existing?.items?.length) {
-    for (const item of existing.items) {
+  const oldItems = existing?.items || [];
+
+  const restored = [];
+  try {
+    for (const item of oldItems) {
       await restoreInventory(item);
+      restored.push(item);
     }
+  } catch (err) {
+    return rollbackRestoredItems(restored, err);
   }
 
   const items = [];
-  for (const item of data.items || []) {
-    const allocation = await consumeInventory(item.productId, item.quantity);
-    items.push(normalizeCostedItem(item, allocation));
+  const rollback = async (originalError) => {
+    const rollbackErrors = [];
+    for (const item of items) {
+      try {
+        await restoreInventory(item);
+      } catch (err) {
+        rollbackErrors.push(`${item.productName || item.productId}: ${err.message}`);
+      }
+    }
+    for (const item of oldItems) {
+      try {
+        await consumeInventory(item.productId, item.quantity);
+      } catch (err) {
+        rollbackErrors.push(`${item.productName || item.productId}: ${err.message}`);
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new Error(
+        `${originalError.message} Inventory rollback failed: ${rollbackErrors.join('; ')}. Verify stock manually.`
+      );
+    }
+    throw originalError;
+  };
+
+  try {
+    for (const item of data.items || []) {
+      const allocation = await consumeInventory(item.productId, item.quantity);
+      items.push(normalizeCostedItem(item, allocation));
+    }
+  } catch (err) {
+    return rollback(err);
   }
 
   const { error } = await supabase
     .from('sales')
     .update(fromSale({ ...data, items }))
     .eq('id', id);
-  if (error) throw new Error(error.message);
+  if (error) return rollback(new Error(error.message));
 }
 
 export async function deleteSale(id) {
@@ -768,14 +973,19 @@ export async function deleteSale(id) {
     .single();
   if (fetchErr) throw new Error(fetchErr.message);
 
-  if (sale?.items?.length) {
-    for (const item of sale.items) {
+  const items = sale?.items || [];
+  const restored = [];
+  try {
+    for (const item of items) {
       await restoreInventory(item);
+      restored.push(item);
     }
+  } catch (err) {
+    return rollbackRestoredItems(restored, err);
   }
 
   const { error } = await supabase.from('sales').delete().eq('id', id);
-  if (error) throw new Error(error.message);
+  if (error) return rollbackRestoredItems(items, new Error(error.message));
 }
 
 export async function getSalesByCustomer(customerId) {
@@ -993,35 +1203,142 @@ export async function getRepairParts(repairJobId) {
 }
 
 export async function addRepairParts(repairJobId, parts) {
+  const normalized = normalizeRepairParts(parts);
   const rows = [];
-  for (const part of parts) {
-    const allocation = await consumeInventory(part.productId, part.quantity);
-    rows.push(fromRepairPart({
-      repairJobId: Number(repairJobId),
-      productId: part.productId,
-      productName: part.productName,
-      costPrice: allocation.unitCost,
-      sellingPrice: part.sellingPrice,
-      quantity: Number(part.quantity) || 0,
-      totalCost: allocation.totalCost,
-      costLayers: allocation.layers,
-    }));
+  const consumed = [];
+  try {
+    for (const part of normalized) {
+      const allocation = await consumeInventory(part.productId, part.quantity);
+      consumed.push({
+        productId: part.productId,
+        productName: part.productName,
+        quantity: part.quantity,
+        costPrice: allocation.unitCost,
+        costLayers: allocation.layers,
+      });
+      rows.push(fromRepairPart({
+        repairJobId: Number(repairJobId),
+        productId: part.productId,
+        productName: part.productName,
+        costPrice: allocation.unitCost,
+        sellingPrice: part.sellingPrice,
+        quantity: part.quantity,
+        totalCost: allocation.totalCost,
+        costLayers: allocation.layers,
+      }));
+    }
+  } catch (err) {
+    return rollbackConsumedItems(consumed, err);
   }
   if (rows.length === 0) return;
   const { error } = await supabase.from('repair_parts').insert(rows);
-  if (error) throw new Error(error.message);
+  if (error) return rollbackConsumedItems(consumed, new Error(error.message));
+}
+
+export async function replaceRepairParts(repairJobId, parts) {
+  const id = Number(repairJobId);
+  const normalized = normalizeRepairParts(parts);
+  const existing = await getRepairParts(id);
+
+  const restored = [];
+  try {
+    for (const part of existing) {
+      await restoreInventory(part);
+      restored.push(part);
+    }
+  } catch (err) {
+    return rollbackRestoredItems(restored, err);
+  }
+
+  if (existing.length > 0) {
+    const { error } = await supabase
+      .from('repair_parts')
+      .delete()
+      .eq('repair_job_id', id);
+    if (error) return rollbackRestoredItems(existing, new Error(error.message));
+  }
+
+  const consumed = [];
+  const rows = [];
+
+  const rollback = async (originalError) => {
+    const rollbackErrors = [];
+    for (const item of consumed) {
+      try {
+        await restoreInventory(item);
+      } catch (err) {
+        rollbackErrors.push(`${item.productName || item.productId}: ${err.message}`);
+      }
+    }
+    for (const part of existing) {
+      try {
+        await consumeInventory(part.productId, part.quantity);
+      } catch (err) {
+        rollbackErrors.push(`${part.productName || part.productId}: ${err.message}`);
+      }
+    }
+    if (existing.length > 0) {
+      const { error: reinsertError } = await supabase
+        .from('repair_parts')
+        .insert(existing.map((part) => fromRepairPart(part)));
+      if (reinsertError) rollbackErrors.push(reinsertError.message);
+    }
+    if (rollbackErrors.length > 0) {
+      throw new Error(
+        `${originalError.message} Rollback failed: ${rollbackErrors.join('; ')}. Verify repair parts and stock manually.`
+      );
+    }
+    throw originalError;
+  };
+
+  try {
+    for (const part of normalized) {
+      const allocation = await consumeInventory(part.productId, part.quantity);
+      consumed.push({
+        productId: part.productId,
+        productName: part.productName,
+        quantity: part.quantity,
+        costPrice: allocation.unitCost,
+        costLayers: allocation.layers,
+      });
+      rows.push(fromRepairPart({
+        repairJobId: id,
+        productId: part.productId,
+        productName: part.productName,
+        costPrice: allocation.unitCost,
+        sellingPrice: part.sellingPrice,
+        quantity: part.quantity,
+        totalCost: allocation.totalCost,
+        costLayers: allocation.layers,
+      }));
+    }
+  } catch (err) {
+    return rollback(err);
+  }
+
+  if (rows.length > 0) {
+    const { error } = await supabase.from('repair_parts').insert(rows);
+    if (error) return rollback(new Error(error.message));
+  }
 }
 
 export async function deleteRepairParts(repairJobId) {
   const parts = await getRepairParts(repairJobId);
-  for (const part of parts) {
-    await restoreInventory(part);
+  const restored = [];
+  try {
+    for (const part of parts) {
+      await restoreInventory(part);
+      restored.push(part);
+    }
+  } catch (err) {
+    return rollbackRestoredItems(restored, err);
   }
+
   const { error } = await supabase
     .from('repair_parts')
     .delete()
     .eq('repair_job_id', repairJobId);
-  if (error) throw new Error(error.message);
+  if (error) return rollbackRestoredItems(parts, new Error(error.message));
 }
 
 export async function restoreRepairPartsStock(repairJobId) {
@@ -1285,9 +1602,13 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
   });
   const monthly = last6.map((m) => ({ month: m, ...monthlyMap[m] }));
 
-  // --- Repair Stats ---
+  // --- Repair Stats (scoped to repairs delivered in the selected range) ---
+  const deliveredInRange = allRepairs.filter(
+    (r) => r.status === 'Delivered' && inRange(r.deliveredAt?.slice(0, 10))
+  );
+
   const problemCount = {};
-  allRepairs.forEach((r) => {
+  deliveredInRange.forEach((r) => {
     if (!r.problemDescription) return;
     const key = r.problemDescription.slice(0, 60);
     problemCount[key] = (problemCount[key] || 0) + 1;
@@ -1297,7 +1618,7 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
     .slice(0, 5)
     .map(([problem, count]) => ({ problem, count }));
 
-  const deliveredRepairs = allRepairs.filter((r) => r.status === 'Delivered' && r.finalCost != null);
+  const deliveredRepairs = deliveredInRange.filter((r) => r.finalCost != null);
   const avgFinalCost =
     deliveredRepairs.length > 0
       ? deliveredRepairs.reduce((s, r) => s + (r.finalCost || 0), 0) / deliveredRepairs.length
@@ -1309,9 +1630,9 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
       ? withTimes.reduce((s, r) => s + (new Date(r.deliveredAt) - new Date(r.receivedAt)) / 3600000, 0) / withTimes.length
       : 0;
 
-  // --- Sales Stats ---
+  // --- Sales Stats (scoped to sales in the selected range) ---
   const productSales = {};
-  allSales.forEach((s) => {
+  allSales.filter((s) => inRange(s.createdAt?.slice(0, 10))).forEach((s) => {
     if (!s.items) return;
     s.items.forEach((item) => {
       const key = item.productName;

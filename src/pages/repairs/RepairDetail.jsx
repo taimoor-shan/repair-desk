@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getRepairJob, updateRepairJob, deleteRepairJob, getRepairParts, addRepairParts, deleteRepairParts, getCustomer, getSettings } from '../../lib/api';
+import { getRepairJob, updateRepairJob, deleteRepairJob, getRepairParts, replaceRepairParts, getCustomer, getSettings } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import { useToast } from '../../context/ToastContext';
 import { useConfirm } from '../../context/ConfirmContext';
@@ -96,12 +96,14 @@ export default function RepairDetail() {
   async function saveParts() {
     const id = Number(repair.id);
 
-    try {
-      await deleteRepairParts(id);
-      if (tempParts.length > 0) {
-        await addRepairParts(id, tempParts);
-      }
+    const invalidPart = tempParts.find((part) => !(Number(part.quantity) >= 1));
+    if (invalidPart) {
+      addToast(`Quantity for "${invalidPart.productName}" must be at least 1.`, 'error');
+      return;
+    }
 
+    try {
+      await replaceRepairParts(id, tempParts);
       const updatedParts = await getRepairParts(id);
       setRepairParts(updatedParts);
       const newPartsTotal = updatedParts.reduce((s, p) => s + (p.sellingPrice || p.costPrice || 0) * p.quantity, 0);

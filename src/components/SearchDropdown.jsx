@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from 'react';
  * @param {string}   emptyMessage - text when no results (default: "No results")
  * @param {number}   maxItems     - visible limit (default 8)
  * @param {Function} onClose      - close callback
+ * @param {Function} isItemDisabled - (item) => true to block selection
  */
 export default function SearchDropdown({
   results = [],
@@ -20,6 +21,7 @@ export default function SearchDropdown({
   emptyMessage = 'No results',
   maxItems = 8,
   onClose,
+  isItemDisabled,
 }) {
   const [cursor, setCursor] = useState(-1);
   const listRef = useRef(null);
@@ -49,14 +51,16 @@ export default function SearchDropdown({
       } else if (e.key === 'ArrowUp') {
         setCursor((prev) => Math.max(prev - 1, 0));
       } else if (e.key === 'Enter' && cursor >= 0 && visible[cursor]) {
-        onSelect(visible[cursor]);
+        if (!isItemDisabled?.(visible[cursor])) {
+          onSelect(visible[cursor]);
+        }
       } else if (e.key === 'Escape') {
         onClose?.();
       }
     }
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [visible, cursor, onSelect, onClose]);
+  }, [visible, cursor, onSelect, onClose, isItemDisabled]);
 
   // Reset cursor when results change
   useEffect(() => {
@@ -105,21 +109,27 @@ export default function SearchDropdown({
       className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg animate-fade-in"
     >
       <div className="max-h-60 overflow-auto">
-        {visible.map((item, idx) => (
-          <button
-            key={item.id ?? idx}
-            type="button"
-            className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 transition-colors ${
-              idx === cursor
-                ? 'bg-blue-50 text-blue-900'
-                : 'hover:bg-gray-50'
-            }`}
-            onClick={() => onSelect(item)}
-            onMouseEnter={() => setCursor(idx)}
-          >
-            {renderItem(item)}
-          </button>
-        ))}
+        {visible.map((item, idx) => {
+          const disabled = isItemDisabled?.(item) ?? false;
+          return (
+            <button
+              key={item.id ?? idx}
+              type="button"
+              disabled={disabled}
+              className={`w-full text-left px-3 py-2 text-sm border-b border-gray-100 last:border-0 transition-colors ${
+                disabled
+                  ? 'opacity-60 cursor-not-allowed'
+                  : idx === cursor
+                  ? 'bg-blue-50 text-blue-900'
+                  : 'hover:bg-gray-50'
+              }`}
+              onClick={() => onSelect(item)}
+              onMouseEnter={() => !disabled && setCursor(idx)}
+            >
+              {renderItem(item)}
+            </button>
+          );
+        })}
       </div>
       {hasMore && (
         <div className="px-3 py-1.5 text-xs text-gray-400 bg-gray-50 border-t border-gray-100 rounded-b-lg">

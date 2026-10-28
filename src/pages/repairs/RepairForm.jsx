@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { addRepairJob, updateRepairJob, getRepairJob, addDevice, updateDevice, getDeviceByIMEI, getCustomer } from '../../lib/api';
 import { generateRepairNumber } from '../../lib/receiptNumber';
@@ -27,6 +27,7 @@ export default function RepairForm() {
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [imeiWarning, setImeiWarning] = useState(null);
   const [loading, setLoading] = useState(isEdit);
+  const loadedRepair = useRef(null);
 
   // Load existing repair for edit mode
   useEffect(() => {
@@ -34,6 +35,7 @@ export default function RepairForm() {
     let cancelled = false;
     getRepairJob(id).then((r) => {
       if (!r || cancelled) return;
+      loadedRepair.current = r;
       setForm({
         customerId: r.customerId ?? null,
         mobileBrand: r.mobileBrand || '',
@@ -109,16 +111,39 @@ export default function RepairForm() {
     if (!validate()) return;
 
     if (isEdit) {
-      // Edit mode — only update fields that are editable
-      await updateRepairJob(Number(id), {
-        mobileBrand: form.mobileBrand.trim(),
-        mobileModel: form.mobileModel.trim(),
-        imei: form.imei.trim() || null,
-        color: form.color.trim() || null,
-        phonePassword: form.phonePassword || null,
-        problemDescription: form.problemDescription.trim(),
-        repairNotes: form.repairNotes.trim() || null,
-      });
+      const customerId = form.customerId ? Number(form.customerId) : null;
+      try {
+        await updateRepairJob(Number(id), {
+          customerId,
+          mobileBrand: form.mobileBrand.trim(),
+          mobileModel: form.mobileModel.trim(),
+          imei: form.imei.trim() || null,
+          color: form.color.trim() || null,
+          phonePassword: form.phonePassword || null,
+          problemDescription: form.problemDescription.trim(),
+          repairNotes: form.repairNotes.trim() || null,
+        });
+      } catch (err) {
+        addToast(err.message || 'Unable to update repair', 'error');
+        return;
+      }
+
+      // Keep the linked device with its owner when the customer is reassigned.
+      const loaded = loadedRepair.current;
+      const customerChanged = customerId !== (loaded?.customerId ?? null);
+      if (loaded?.deviceId && customerChanged) {
+        try {
+          await updateDevice(loaded.deviceId, { customerId });
+        } catch (err) {
+          addToast(
+            `Repair updated, but its device could not be reassigned: ${err.message || 'unknown error'}`,
+            'error'
+          );
+          navigate(`/repairs/${id}`);
+          return;
+        }
+      }
+
       addToast('Repair updated');
       navigate(`/repairs/${id}`);
       return;
@@ -144,7 +169,7 @@ export default function RepairForm() {
     }
 
     const receiptNumber = await generateRepairNumber();
-    const repairJobId = await addRepairJob({
+    await addRepairJob({
       ...form,
       customerId: form.customerId ? Number(form.customerId) : null,
       deviceId,
@@ -172,58 +197,45 @@ export default function RepairForm() {
       </h2>
       <div className="max-w-lg bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
-          {isEdit ? (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Customer
-              </label>
-              <p className="text-sm text-gray-900 py-2">
-                {form.customerId ? `Customer #${form.customerId}` : 'Walk-in'}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Customer
-                </label>
-                <CustomerPicker
-                  value={form.customerId}
-                  onChange={(id) => {
-                    update('customerId', id);
-                    setSelectedDevice(null);
-                    setImeiWarning(null);
-                  }}
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Customer
+            </label>
+            <CustomerPicker
+              value={form.customerId}
+              onChange={(id) => {
+                update('customerId', id);
+                setSelectedDevice(null);
+                setImeiWarning(null);
+              }}
+            />
+          </div>
 
-              {form.customerId && (
-                <DevicePicker
-                  customerId={form.customerId}
-                  selectedDevice={selectedDevice}
-                  onDeviceSelect={(device) => {
-                    setSelectedDevice(device);
-                    if (device) {
-                      setForm((prev) => ({
-                        ...prev,
-                        mobileBrand: device.brand,
-                        mobileModel: device.model,
-                        imei: device.imei || '',
-                        color: device.color || '',
-                      }));
-                    } else {
-                      setForm((prev) => ({
-                        ...prev,
-                        mobileBrand: '',
-                        mobileModel: '',
-                        imei: '',
-                        color: '',
-                      }));
-                    }
-                  }}
-                />
-              )}
-            </>
+          {!isEdit && form.customerId && (
+            <DevicePicker
+              customerId={form.customerId}
+              selectedDevice={selectedDevice}
+              onDeviceSelect={(device) => {
+                setSelectedDevice(device);
+                if (device) {
+                  setForm((prev) => ({
+                    ...prev,
+                    mobileBrand: device.brand,
+                    mobileModel: device.model,
+                    imei: device.imei || '',
+                    color: device.color || '',
+                  }));
+                } else {
+                  setForm((prev) => ({
+                    ...prev,
+                    mobileBrand: '',
+                    mobileModel: '',
+                    imei: '',
+                    color: '',
+                  }));
+                }
+              }}
+            />
           )}
 
           <div className="grid grid-cols-2 gap-4">

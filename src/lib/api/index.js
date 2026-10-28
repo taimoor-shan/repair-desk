@@ -53,6 +53,7 @@ export const {
   getRepairParts,
   addRepairParts,
   deleteRepairParts,
+  replaceRepairParts,
   restoreRepairPartsStock,
   getExpenses,
   addExpense,

@@ -14,13 +14,20 @@ export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) 
   );
 
   function handleSelect(product) {
-    onAdd({
-      productId: product.id,
-      productName: product.name,
-      quantity: 1,
-      costPrice: product.costPrice || 0,
-      sellingPrice: product.sellingPrice || 0,
-    });
+    if ((Number(product.stock) || 0) <= 0) return;
+
+    const existing = parts.find((part) => part.productId === product.id);
+    if (existing) {
+      onUpdate(product.id, 'quantity', Number(existing.quantity) + 1);
+    } else {
+      onAdd({
+        productId: product.id,
+        productName: product.name,
+        quantity: 1,
+        costPrice: product.costPrice || 0,
+        sellingPrice: product.sellingPrice || 0,
+      });
+    }
     setQuery('');
     setShowResults(false);
   }
@@ -53,6 +60,7 @@ export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) 
             maxItems={8}
             onClose={() => setShowResults(false)}
             onSelect={handleSelect}
+            isItemDisabled={(p) => (Number(p.stock) || 0) <= 0}
             renderItem={(p) => (
               <span className={p.stock <= 0 ? 'text-gray-400' : ''}>
                 <span className="font-medium">{p.name}</span>
@@ -88,8 +96,17 @@ export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) 
                       min="1"
                       value={part.quantity}
                       onChange={(e) =>
-                        onUpdate(part.productId, 'quantity', Number(e.target.value))
+                        onUpdate(
+                          part.productId,
+                          'quantity',
+                          e.target.value === '' ? '' : Number(e.target.value)
+                        )
                       }
+                      onBlur={() => {
+                        if (!(Number(part.quantity) >= 1)) {
+                          onUpdate(part.productId, 'quantity', 1);
+                        }
+                      }}
                       className="w-full text-center border border-gray-300 rounded px-1 py-0.5 text-sm"
                     />
                   </td>
@@ -110,6 +127,7 @@ export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) 
                     <button
                       type="button"
                       onClick={() => onRemove(part.productId)}
+                      aria-label={`Remove ${part.productName}`}
                       className="text-red-400 hover:text-red-600 text-sm"
                     >
                       ✕

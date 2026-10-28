@@ -32,7 +32,8 @@
       "mcp__supabase__list_projects",
       "Bash(npx supabase *)",
       "mcp__codegraph__codegraph_explore",
-      "Bash(npx eslint *)"
+      "Bash(npx eslint *)",
+      "Bash(rg --files -g '*.sql' -g '*migration*' -g '*supabase*')"
     ]
   },
   "enabledMcpjsonServers": [

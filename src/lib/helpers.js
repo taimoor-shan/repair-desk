@@ -71,6 +71,18 @@ export function formatDateTime(iso) {
   });
 }
 
+/**
+ * Local calendar date as YYYY-MM-DD.
+ * `toISOString()` converts to UTC first, which rolls over at the wrong time
+ * for shops in timezones ahead of UTC — daily records must use local dates.
+ */
+export function localDateString(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 export function todayRange() {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());

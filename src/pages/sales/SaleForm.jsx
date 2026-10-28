@@ -39,6 +39,7 @@ export default function SaleForm() {
       setErrors((prev) => ({
         ...prev,
         [`qty_${product.id}`]: undefined,
+        discount: undefined,
       }));
       setItems((prev) =>
         prev.map((i) =>
@@ -62,6 +63,7 @@ export default function SaleForm() {
     setErrors((prev) => ({
       ...prev,
       [`qty_${product.id}`]: undefined,
+      discount: undefined,
     }));
   }
 
@@ -74,17 +76,29 @@ export default function SaleForm() {
     setErrors((prev) => ({
       ...prev,
       [`qty_${productId}`]: undefined,
+      discount: undefined,
     }));
   }
 
   function removeItem(productId) {
     setItems((prev) => prev.filter((i) => i.productId !== productId));
+    setErrors((prev) => ({ ...prev, discount: undefined }));
   }
 
   async function validate() {
     const e = {};
     if (items.length === 0) {
       e.items = 'Add at least one item';
+    }
+    const discountValue = Number(discount) || 0;
+    const subtotalValue = items.reduce(
+      (sum, i) => sum + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0),
+      0
+    );
+    if (discountValue < 0) {
+      e.discount = 'Discount cannot be negative';
+    } else if (discountValue > subtotalValue) {
+      e.discount = 'Discount cannot exceed subtotal';
     }
     for (const item of items) {
       if (!item.quantity || item.quantity < 1) {
@@ -251,15 +265,28 @@ export default function SaleForm() {
               <span className="text-gray-500">Subtotal</span>
               <span className="font-medium">{formatCurrency(subtotal)}</span>
             </div>
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-start">
               <span className="text-gray-500">Discount</span>
-              <input
-                type="number"
-                value={discount}
-                onChange={(e) => setDiscount(e.target.value)}
-                className="w-24 border border-gray-300 rounded px-2 py-1 text-sm text-right"
-                min="0"
-              />
+              <div className="text-right">
+                <input
+                  type="number"
+                  value={discount}
+                  onChange={(e) => {
+                    setDiscount(e.target.value);
+                    if (errors.discount) {
+                      setErrors((prev) => ({ ...prev, discount: undefined }));
+                    }
+                  }}
+                  className={`w-24 border rounded px-2 py-1 text-sm text-right ${
+                    errors.discount ? 'border-red-400' : 'border-gray-300'
+                  }`}
+                  min="0"
+                  max={subtotal}
+                />
+                {errors.discount && (
+                  <p className="mt-0.5 text-xs text-red-600">{errors.discount}</p>
+                )}
+              </div>
             </div>
             <div className="flex justify-between pt-2 border-t border-gray-200">
               <span className="font-semibold">Total</span>

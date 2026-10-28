@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import useDebounce from './useDebounce';
 
 /**
@@ -7,12 +7,13 @@ import useDebounce from './useDebounce';
  * @param {Function} fetchFn       async function returning all items
  * @param {string[]} searchFields   field names to search (e.g. ['name', 'phone'])
  * @param {number}   debounceMs     debounce delay (default 300)
- * @returns {{ query, setQuery, debouncedQuery, results, isLoading, hasResults }}
+ * @returns {{ query, setQuery, debouncedQuery, results, isLoading, hasResults, refetch }}
  */
 export default function useSmartSearch(fetchFn, searchFields, debounceMs = 300) {
   const [allItems, setAllItems] = useState([]);
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [reloadToken, setReloadToken] = useState(0);
   const debouncedQuery = useDebounce(query, debounceMs);
   const fetchRef = useRef(fetchFn);
 
@@ -20,18 +21,30 @@ export default function useSmartSearch(fetchFn, searchFields, debounceMs = 300) 
     fetchRef.current = fetchFn;
   }, [fetchFn]);
 
-  // Prefetch all data on mount
+  // Prefetch all data on mount and after an explicit refetch
   useEffect(() => {
     let cancelled = false;
-    fetchRef.current().then((items) => {
-      if (!cancelled) {
-        setAllItems(items || []);
-        setIsLoading(false);
-      }
-    });
+    fetchRef.current()
+      .then((items) => {
+        if (!cancelled) {
+          setAllItems(items || []);
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAllItems([]);
+          setIsLoading(false);
+        }
+      });
     return () => {
       cancelled = true;
     };
+  }, [reloadToken]);
+
+  const refetch = useCallback(() => {
+    setIsLoading(true);
+    setReloadToken((n) => n + 1);
   }, []);
 
   const searchFieldsKey = JSON.stringify(searchFields);
@@ -41,7 +54,7 @@ export default function useSmartSearch(fetchFn, searchFields, debounceMs = 300) 
     rankItems(allItems, JSON.parse(searchFieldsKey), debouncedQuery)
   ), [allItems, searchFieldsKey, debouncedQuery]);
 
-  return { query, setQuery, debouncedQuery, results, isLoading, hasResults };
+  return { query, setQuery, debouncedQuery, results, isLoading, hasResults, refetch };
 }
 
 function rankItems(items, fields, query) {

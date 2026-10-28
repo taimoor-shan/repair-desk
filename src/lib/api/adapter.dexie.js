@@ -1,4 +1,5 @@
 import Dexie from 'dexie';
+import { localDateString } from '../helpers';
 
 const db = new Dexie('RepairDesk');
 
@@ -355,7 +356,21 @@ export async function updateCustomer(id, data) {
 }
 
 export async function deleteCustomer(id) {
-  return db.customers.delete(Number(id));
+  const customerId = Number(id);
+  return db.transaction(
+    'rw',
+    db.customers,
+    db.repairJobs,
+    db.sales,
+    db.devices,
+    async () => {
+      // Records stay, but are detached from the deleted customer and show as Walk-in.
+      await db.repairJobs.where('customerId').equals(customerId).modify({ customerId: null });
+      await db.sales.where('customerId').equals(customerId).modify({ customerId: null });
+      await db.devices.where('customerId').equals(customerId).modify({ customerId: null });
+      return db.customers.delete(customerId);
+    }
+  );
 }
 
 export async function getCustomerByPhone(phone) {
@@ -625,7 +640,7 @@ export async function updateSettings(data) {
 
 export async function getNextRepairSeq() {
   const s = await getSettings();
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const today = localDateString().replace(/-/g, '');
 
   if (s.lastRepairDate !== today) {
     s.lastRepairSeq = 1;
@@ -644,7 +659,7 @@ export async function getNextRepairSeq() {
 
 export async function getNextSaleSeq() {
   const s = await getSettings();
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const today = localDateString().replace(/-/g, '');
 
   if (s.lastSaleDate !== today) {
     s.lastSaleSeq = 1;
@@ -883,6 +898,33 @@ export async function getRepairParts(repairJobId) {
   return db.repairParts.where('repairJobId').equals(Number(repairJobId)).toArray();
 }
 
+function normalizeRepairParts(parts) {
+  const merged = new Map();
+  for (const part of parts || []) {
+    const productId = Number(part.productId);
+    const quantity = Number(part.quantity);
+    if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error('Every repair part needs a product and a quantity of at least 1.');
+    }
+    const key = String(productId);
+    const existing = merged.get(key);
+    if (existing) {
+      existing.quantity += quantity;
+      if (part.sellingPrice !== undefined) existing.sellingPrice = part.sellingPrice;
+      if (part.productName) existing.productName = part.productName;
+    } else {
+      merged.set(key, {
+        productId,
+        productName: part.productName,
+        quantity,
+        sellingPrice: part.sellingPrice,
+        costPrice: part.costPrice,
+      });
+    }
+  }
+  return [...merged.values()];
+}
+
 export async function addRepairParts(repairJobId, parts) {
   return db.transaction('rw', db.products, db.stockPurchases, db.repairParts, async () => {
     const rows = [];
@@ -911,6 +953,37 @@ export async function deleteRepairParts(repairJobId) {
       await restoreInventory(part);
     }
     return db.repairParts.where('repairJobId').equals(Number(repairJobId)).delete();
+  });
+}
+
+export async function replaceRepairParts(repairJobId, parts) {
+  const id = Number(repairJobId);
+  const normalized = normalizeRepairParts(parts);
+
+  return db.transaction('rw', db.products, db.stockPurchases, db.repairParts, async () => {
+    const existing = await db.repairParts.where('repairJobId').equals(id).toArray();
+    for (const part of existing) {
+      await restoreInventory(part);
+    }
+    await db.repairParts.where('repairJobId').equals(id).delete();
+
+    const rows = [];
+    for (const part of normalized) {
+      const allocation = await consumeInventory(part.productId, part.quantity);
+      rows.push({
+        repairJobId: id,
+        productId: part.productId,
+        productName: part.productName,
+        costPrice: allocation.unitCost,
+        sellingPrice: part.sellingPrice,
+        quantity: part.quantity,
+        totalCost: allocation.totalCost,
+        costLayers: allocation.layers,
+      });
+    }
+    if (rows.length > 0) {
+      await db.repairParts.bulkAdd(rows);
+    }
   });
 }
 
@@ -1136,9 +1209,13 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
 
   const monthly = last6.map((m) => ({ month: m, ...monthlyMap[m] }));
 
-  // --- Repair Stats ---
+  // --- Repair Stats (scoped to repairs delivered in the selected range) ---
+  const deliveredInRange = allRepairs.filter(
+    (r) => r.status === 'Delivered' && inRange(r.deliveredAt?.slice(0, 10))
+  );
+
   const problemCount = {};
-  allRepairs.forEach((r) => {
+  deliveredInRange.forEach((r) => {
     if (!r.problemDescription) return;
     const key = r.problemDescription.slice(0, 60);
     problemCount[key] = (problemCount[key] || 0) + 1;
@@ -1148,23 +1225,22 @@ export async function getAnalyticsData(rangeStart, rangeEnd) {
     .slice(0, 5)
     .map(([problem, count]) => ({ problem, count }));
 
-  const deliveredRepairs = allRepairs.filter((r) => r.status === 'Delivered' && r.finalCost != null);
+  const deliveredRepairs = deliveredInRange.filter((r) => r.finalCost != null);
   const avgFinalCost =
     deliveredRepairs.length > 0
       ? deliveredRepairs.reduce((s, r) => s + (r.finalCost || 0), 0) / deliveredRepairs.length
       : 0;
 
+  const withTimes = deliveredRepairs.filter((r) => r.receivedAt && r.deliveredAt);
   const avgTurnaroundHours =
-    deliveredRepairs.filter((r) => r.receivedAt && r.deliveredAt).length > 0
-      ? deliveredRepairs
-          .filter((r) => r.receivedAt && r.deliveredAt)
-          .reduce((s, r) => s + (new Date(r.deliveredAt) - new Date(r.receivedAt)) / 3600000, 0) /
-        deliveredRepairs.filter((r) => r.receivedAt && r.deliveredAt).length
+    withTimes.length > 0
+      ? withTimes.reduce((s, r) => s + (new Date(r.deliveredAt) - new Date(r.receivedAt)) / 3600000, 0) /
+        withTimes.length
       : 0;
 
-  // --- Sales Stats ---
+  // --- Sales Stats (scoped to sales in the selected range) ---
   const productSales = {};
-  allSales.forEach((s) => {
+  allSales.filter((s) => inRange(s.createdAt?.slice(0, 10))).forEach((s) => {
     if (!s.items) return;
     s.items.forEach((item) => {
       const key = item.productName;
