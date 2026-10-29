@@ -5,7 +5,6 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import { formatCurrency, rankPrefixFirst } from '../../lib/helpers';
 import useDebounce from '../../hooks/useDebounce';
-import SearchDropdown from '../../components/SearchDropdown';
 import EmptyState from '../../components/EmptyState';
 
 const categories = ['All', 'Mobile', 'Accessory', 'RepairPart'];
@@ -23,7 +22,6 @@ export default function ProductList() {
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
-  const [showDropdown, setShowDropdown] = useState(false);
   const [adjustModal, setAdjustModal] = useState(null);
   const [adjustAmount, setAdjustAmount] = useState(0);
   const [adjustReason, setAdjustReason] = useState('');
@@ -146,9 +144,7 @@ export default function ProductList() {
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
-              setShowDropdown(true);
             }}
-            onFocus={() => setShowDropdown(true)}
             placeholder="Search by name or SKU..."
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
@@ -156,27 +152,6 @@ export default function ProductList() {
             <span className="text-xs text-gray-500 mt-1 inline-block">
               {filtered.length} product{filtered.length !== 1 ? 's' : ''} match
             </span>
-          )}
-          {showDropdown && debouncedSearch.length > 0 && (
-            <SearchDropdown
-              results={filtered}
-              isLoading={false}
-              emptyMessage="No matching products"
-              maxItems={8}
-              onClose={() => setShowDropdown(false)}
-              onSelect={(p) => {
-                setShowDropdown(false);
-                window.location.href = `#/inventory/${p.id}/edit`;
-              }}
-              renderItem={(p) => (
-                <>
-                  <span className="font-medium">{p.name}</span>
-                  <span className="text-gray-400 text-xs ml-2">
-                    {p.sku && `${p.sku} · `}Stock: {p.stock} · {formatCurrency(p.sellingPrice)}
-                  </span>
-                </>
-              )}
-            />
           )}
         </div>
         <div className="flex flex-wrap gap-1 bg-white border border-gray-200 rounded-lg p-1">

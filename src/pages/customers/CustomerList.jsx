@@ -1,14 +1,11 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getCustomers, deleteCustomer, getRepairJobsByCustomer, getSalesByCustomer } from '../../lib/api';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import useSmartSearch from '../../hooks/useSmartSearch';
-import SearchDropdown from '../../components/SearchDropdown';
 import EmptyState from '../../components/EmptyState';
 
 export default function CustomerList() {
-  const [showDropdown, setShowDropdown] = useState(false);
   const confirm = useConfirm();
   const addToast = useToast();
 
@@ -64,9 +61,7 @@ export default function CustomerList() {
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
-            setShowDropdown(true);
           }}
-          onFocus={() => setShowDropdown(true)}
           placeholder="Search by name or phone..."
           className="w-full max-w-md border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
@@ -74,29 +69,6 @@ export default function CustomerList() {
           <span className="ml-3 text-xs text-gray-500">
             {customers.length} customer{customers.length !== 1 ? 's' : ''} match
           </span>
-        )}
-        {showDropdown && query.length > 0 && (
-          <div className="max-w-md">
-            <SearchDropdown
-              results={customers}
-              isLoading={isLoading}
-              emptyMessage="No customers found"
-              maxItems={8}
-              onClose={() => setShowDropdown(false)}
-              onSelect={(c) => {
-                setShowDropdown(false);
-                window.location.href = `#/customers/${c.id}`;
-              }}
-              renderItem={(c) => (
-                <>
-                  <span className="font-medium">{c.name}</span>
-                  {c.phone && (
-                    <span className="text-gray-500 ml-2">{c.phone}</span>
-                  )}
-                </>
-              )}
-            />
-          </div>
         )}
       </div>
 

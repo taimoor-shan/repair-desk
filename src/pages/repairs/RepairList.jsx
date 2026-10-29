@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { getRepairJobs, getCustomer } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import useSmartSearch from '../../hooks/useSmartSearch';
-import SearchDropdown from '../../components/SearchDropdown';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 
@@ -13,7 +12,6 @@ export default function RepairList() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
 
   // Prefetch all repairs via smart search hook
   const { query, setQuery, results: repairs, isLoading } = useSmartSearch(
@@ -93,10 +91,8 @@ export default function RepairList() {
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
-              setShowDropdown(true);
               if (e.target.value.trim()) { setDateFrom(''); setDateTo(''); }
             }}
-            onFocus={() => setShowDropdown(true)}
             placeholder="Search by receipt, customer, IMEI, device..."
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
@@ -104,31 +100,6 @@ export default function RepairList() {
             <span className="text-xs text-gray-500 mt-1 inline-block">
               {filtered.length} repair{filtered.length !== 1 ? 's' : ''} match
             </span>
-          )}
-          {showDropdown && query.length > 0 && (
-            <SearchDropdown
-              results={filtered}
-              isLoading={isLoading}
-              emptyMessage="No repairs found"
-              maxItems={8}
-              onClose={() => setShowDropdown(false)}
-              onSelect={(r) => {
-                setShowDropdown(false);
-                navigate(`/repairs/${r.id}`);
-              }}
-              renderItem={(r) => {
-                const cust = customers[r.customerId];
-                return (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium text-blue-600">{r.receiptNumber || '—'}</span>
-                    <span className="text-gray-600">
-                      {cust?.name || 'Walk-in'} — {r.mobileBrand} {r.mobileModel}
-                    </span>
-                    <StatusBadge status={r.status} />
-                  </div>
-                );
-              }}
-            />
           )}
         </div>
         <input
