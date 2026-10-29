@@ -4,6 +4,8 @@ import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 import useSmartSearch from '../../hooks/useSmartSearch';
 import EmptyState from '../../components/EmptyState';
+import Pagination from '../../components/Pagination';
+import usePagination from '../../hooks/usePagination';
 
 export default function CustomerList() {
   const confirm = useConfirm();
@@ -15,7 +17,11 @@ export default function CustomerList() {
     300
   );
 
-  const customers = results;
+  const customers = [...results].sort((a, b) =>
+    (b.createdAt || '').localeCompare(a.createdAt || '')
+  );
+
+  const pagination = usePagination(customers);
 
   async function handleDelete(customer) {
     try {
@@ -82,7 +88,7 @@ export default function CustomerList() {
             Loading customers...
           </div>
         </div>
-      ) : customers.length === 0 ? (
+      ) : pagination.totalItems === 0 ? (
         <EmptyState
           title="No customers yet"
           description="Add your first customer to get started."
@@ -115,7 +121,7 @@ export default function CustomerList() {
               </tr>
             </thead>
             <tbody>
-              {customers.map((c) => (
+              {pagination.items.map((c) => (
                 <tr
                   key={c.id}
                   className="border-b border-gray-100 hover:bg-gray-50"
@@ -164,6 +170,11 @@ export default function CustomerList() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Pagination */}
+      {!isLoading && pagination.totalItems > 0 && (
+        <Pagination pagination={pagination} label="customers" />
       )}
     </div>
   );

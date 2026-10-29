@@ -6,6 +6,8 @@ import { useToast } from '../../context/ToastContext';
 import { formatCurrency, rankPrefixFirst } from '../../lib/helpers';
 import useDebounce from '../../hooks/useDebounce';
 import EmptyState from '../../components/EmptyState';
+import Pagination from '../../components/Pagination';
+import usePagination from '../../hooks/usePagination';
 
 const categories = ['All', 'Mobile', 'Accessory', 'RepairPart'];
 const adjustReasons = ['Damaged', 'Stock Count', 'Other'];
@@ -46,7 +48,10 @@ export default function ProductList() {
       ? products
       : products.filter((p) => p.category === category);
 
-  const filtered = rankPrefixFirst(categoryFiltered, debouncedSearch, ['name', 'sku']);
+  const filtered = [...rankPrefixFirst(categoryFiltered, debouncedSearch, ['name', 'sku'])].sort((a, b) =>
+    (b.createdAt || '').localeCompare(a.createdAt || '')
+  );
+  const pagination = usePagination(filtered);
 
   async function handleDelete(product) {
     const ok = await confirm(
@@ -181,7 +186,7 @@ export default function ProductList() {
             Loading inventory...
           </div>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : pagination.totalItems === 0 ? (
         <EmptyState
           title="No products yet"
           description="Add your first product to start tracking inventory."
@@ -220,7 +225,7 @@ export default function ProductList() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((p) => (
+              {pagination.items.map((p) => (
                 <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3">
                     <span className="font-medium text-gray-900">{p.name}</span>
@@ -294,6 +299,11 @@ export default function ProductList() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && pagination.totalItems > 0 && (
+        <Pagination pagination={pagination} label="products" />
       )}
 
       {/* Stock Adjustment Modal (corrections only) */}

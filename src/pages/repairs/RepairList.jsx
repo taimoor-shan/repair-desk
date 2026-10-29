@@ -5,6 +5,8 @@ import { formatDate, formatCurrency } from '../../lib/helpers';
 import useSmartSearch from '../../hooks/useSmartSearch';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
+import Pagination from '../../components/Pagination';
+import usePagination from '../../hooks/usePagination';
 
 export default function RepairList() {
   const navigate = useNavigate();
@@ -53,21 +55,25 @@ export default function RepairList() {
       })
     : repairs;
 
+  const searchSorted = [...searchFiltered].sort((a, b) =>
+    (b.receivedAt || '').localeCompare(a.receivedAt || '')
+  );
+
   // Apply date range filter
   const dateFiltered = (dateFrom && dateTo)
-    ? searchFiltered.filter((r) => {
+    ? searchSorted.filter((r) => {
         const d = (r.receivedAt || '').slice(0, 10);
         return d >= dateFrom && d <= dateTo;
-      }).sort((a, b) =>
-        (b.receivedAt || '').localeCompare(a.receivedAt || '')
-      )
-    : searchFiltered;
+      })
+    : searchSorted;
 
   // Apply status filter
   const filtered =
     statusFilter === 'All'
       ? dateFiltered
       : dateFiltered.filter((r) => r.status === statusFilter);
+
+  const pagination = usePagination(filtered);
 
   const statuses = ['All', 'Pending', 'InProgress', 'Ready', 'Delivered'];
 
@@ -201,7 +207,7 @@ export default function RepairList() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => {
+              {pagination.items.map((r) => {
                 const cust = customers[r.customerId];
                 return (
                   <tr
@@ -230,6 +236,11 @@ export default function RepairList() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Pagination */}
+      {!isLoading && pagination.totalItems > 0 && (
+        <Pagination pagination={pagination} label="repairs" />
       )}
     </div>
   );

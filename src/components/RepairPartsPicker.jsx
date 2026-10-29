@@ -9,7 +9,7 @@ export default function RepairPartsPicker({ parts, onAdd, onUpdate, onRemove }) 
 
   const { query, setQuery, results: filtered, isLoading } = useSmartSearch(
     () => getProducts().then((prods) => prods.filter((p) => p.category === 'RepairPart')),
-    ['name'],
+    ['name', 'sku'],
     0
   );
 

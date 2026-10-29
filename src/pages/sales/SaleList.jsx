@@ -4,6 +4,8 @@ import { getSales, getCustomer, deleteSale } from '../../lib/api';
 import { formatDate, formatCurrency } from '../../lib/helpers';
 import useSmartSearch from '../../hooks/useSmartSearch';
 import EmptyState from '../../components/EmptyState';
+import Pagination from '../../components/Pagination';
+import usePagination from '../../hooks/usePagination';
 import { useConfirm } from '../../context/ConfirmContext';
 import { useToast } from '../../context/ToastContext';
 
@@ -52,16 +54,20 @@ export default function SaleList() {
     : sales;
 
   // Apply date range filter
+  const searchSorted = [...searchFiltered].sort((a, b) =>
+    (b.createdAt || '').localeCompare(a.createdAt || '')
+  );
+
+  // Apply date range filter
   const dateFiltered = (dateFrom && dateTo)
-    ? searchFiltered.filter((s) => {
+    ? searchSorted.filter((s) => {
         const d = (s.createdAt || '').slice(0, 10);
         return d >= dateFrom && d <= dateTo;
-      }).sort((a, b) =>
-        (b.createdAt || '').localeCompare(a.createdAt || '')
-      )
-    : searchFiltered;
+      })
+    : searchSorted;
 
   const filtered = dateFiltered;
+  const pagination = usePagination(filtered);
 
   async function handleDelete(sale, e) {
     e.stopPropagation();
@@ -187,7 +193,7 @@ export default function SaleList() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((s) => {
+              {pagination.items.map((s) => {
                 const cust = customers[s.customerId];
                 return (
                   <tr
@@ -227,6 +233,11 @@ export default function SaleList() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Pagination */}
+      {!isLoading && pagination.totalItems > 0 && (
+        <Pagination pagination={pagination} label="sales" />
       )}
     </div>
   );
